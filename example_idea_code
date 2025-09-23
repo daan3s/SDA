@@ -1,0 +1,405 @@
+import pygame
+import random
+import math
+
+# Initialize pygame
+pygame.init()
+WIDTH, HEIGHT = 1800, 1000
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Pizza Restaurant Simulation - Keyboard Controls")
+clock = pygame.time.Clock()
+
+# Colors
+BACKGROUND = (240, 235, 225)
+KITCHEN_COLOR = (200, 200, 200)
+OVEN_COLOR = (180, 120, 70)
+DELIVERY_COLOR = (180, 220, 180)
+TEXT_COLOR = (50, 50, 50)
+RED = (220, 70, 60)
+GREEN = (70, 180, 70)
+BLUE = (70, 120, 220)
+YELLOW = (220, 200, 70)
+HIGHLIGHT = (255, 255, 100)
+
+# Font
+font = pygame.font.SysFont(None, 24)
+title_font = pygame.font.SysFont(None, 32)
+
+class Chef:
+    def __init__(self):
+        self.x = 150
+        self.y = 150
+        self.state = "idle"  # preparing, cooking, idle
+        self.progress = 0
+        self.current_pizza = None
+        self.speed = 0.5
+        self.selected = False
+        self.upgrade_level = 1
+        self.cost_to_upgrade = 100
+        
+    def update(self, orders, oven):
+        if self.state == "preparing":
+            self.progress += self.speed
+            if self.progress >= 100:
+                self.state = "cooking"
+                self.progress = 0
+                # Put pizza in oven
+                if self.current_pizza and oven.add_pizza(self.current_pizza):
+                    self.current_pizza = None
+        elif self.state == "cooking":
+            # Wait for oven to finish
+            if self.current_pizza not in oven.pizzas:
+                self.state = "idle"
+                self.progress = 0
+        elif self.state == "idle":
+            # Look for new orders
+            for order in orders:
+                if order.status == "ordered":
+                    order.status = "preparing"
+                    self.state = "preparing"
+                    self.current_pizza = order
+                    self.progress = 0
+                    break
+    
+    def upgrade(self):
+        if self.upgrade_level < 3:
+            self.speed += 0.3
+            self.upgrade_level += 1
+            self.cost_to_upgrade *= 2
+            return True
+        return False
+    
+    def draw(self, screen):
+        # Draw chef
+        color = BLUE if self.state == "idle" else YELLOW
+        if self.selected:
+            pygame.draw.circle(screen, HIGHLIGHT, (self.x, self.y), 25)
+        pygame.draw.circle(screen, color, (self.x, self.y), 20)
+        
+        # Draw progress bar if working
+        if self.state != "idle":
+            pygame.draw.rect(screen, (200, 200, 200), (self.x - 25, self.y - 40, 50, 10))
+            pygame.draw.rect(screen, GREEN, (self.x - 25, self.y - 40, self.progress / 2, 10))
+            
+        # Draw status text
+        status_text = font.render(f"Chef: {self.state}", True, TEXT_COLOR)
+        screen.blit(status_text, (self.x - 30, self.y + 30))
+        
+        # Draw upgrade level
+        level_text = font.render(f"Lvl: {self.upgrade_level}", True, TEXT_COLOR)
+        screen.blit(level_text, (self.x - 20, self.y + 50))
+
+class Oven:
+    def __init__(self):
+        self.x = 300
+        self.y = 150
+        self.pizzas = []
+        self.cooking_times = {}
+        self.capacity = 3
+        self.selected = False
+        self.upgrade_level = 1
+        self.cost_to_upgrade = 150
+        
+    def add_pizza(self, pizza):
+        if pizza and len(self.pizzas) < self.capacity:
+            self.pizzas.append(pizza)
+            self.cooking_times[pizza] = 0
+            pizza.status = "cooking"
+            return True
+        return False
+    
+    def update(self):
+        # Update cooking times
+        speed_multiplier = 1.0 + (self.upgrade_level - 1) * 0.5
+        for pizza in self.pizzas[:]:
+            self.cooking_times[pizza] += 0.3 * speed_multiplier
+            if self.cooking_times[pizza] >= 100:
+                pizza.status = "cooked"
+                self.pizzas.remove(pizza)
+                del self.cooking_times[pizza]
+    
+    def upgrade(self):
+        if self.upgrade_level < 3:
+            self.capacity += 1
+            self.upgrade_level += 1
+            self.cost_to_upgrade *= 2
+            return True
+        return False
+    
+    def draw(self, screen):
+        # Draw oven
+        if self.selected:
+            pygame.draw.rect(screen, HIGHLIGHT, (self.x - 45, self.y - 35, 90, 70), border_radius=5)
+        pygame.draw.rect(screen, OVEN_COLOR, (self.x - 40, self.y - 30, 80, 60))
+        
+        # Draw pizzas in oven
+        for i, pizza in enumerate(self.pizzas):
+            pygame.draw.circle(screen, RED, (self.x - 20 + i*20, self.y), 15)
+            
+        # Draw status
+        status_text = font.render(f"Oven: {len(self.pizzas)}/{self.capacity}", True, TEXT_COLOR)
+        screen.blit(status_text, (self.x - 30, self.y + 40))
+        
+        # Draw upgrade level
+        level_text = font.render(f"Lvl: {self.upgrade_level}", True, TEXT_COLOR)
+        screen.blit(level_text, (self.x - 15, self.y + 60))
+
+class DeliveryPerson:
+    def __init__(self):
+        self.x = 500
+        self.y = 150
+        self.state = "waiting"  # waiting, delivering, returning
+        self.delivery_progress = 0
+        self.current_order = None
+        self.speed = 0.8
+        self.selected = False
+        self.upgrade_level = 1
+        self.cost_to_upgrade = 120
+        
+    def update(self, orders):
+        if self.state == "waiting":
+            # Look for cooked pizzas
+            for order in orders:
+                if order.status == "cooked":
+                    order.status = "delivering"
+                    self.state = "delivering"
+                    self.current_order = order
+                    self.delivery_progress = 0
+                    break
+        elif self.state == "delivering":
+            speed_multiplier = 1.0 + (self.upgrade_level - 1) * 0.4
+            self.delivery_progress += self.speed * speed_multiplier
+            if self.delivery_progress >= 100:
+                self.state = "returning"
+                if self.current_order:
+                    self.current_order.status = "delivered"
+                self.delivery_progress = 0
+        elif self.state == "returning":
+            speed_multiplier = 1.0 + (self.upgrade_level - 1) * 0.4
+            self.delivery_progress += self.speed * speed_multiplier
+            if self.delivery_progress >= 100:
+                self.state = "waiting"
+                self.delivery_progress = 0
+                self.current_order = None
+    
+    def upgrade(self):
+        if self.upgrade_level < 3:
+            self.speed += 0.4
+            self.upgrade_level += 1
+            self.cost_to_upgrade *= 2
+            return True
+        return False
+    
+    def draw(self, screen):
+        # Draw delivery person
+        color = BLUE if self.state == "waiting" else GREEN
+        if self.selected:
+            pygame.draw.circle(screen, HIGHLIGHT, (self.x, self.y), 25)
+        pygame.draw.circle(screen, color, (self.x, self.y), 20)
+        
+        # Draw progress if delivering or returning
+        if self.state in ["delivering", "returning"]:
+            pygame.draw.rect(screen, (200, 200, 200), (self.x - 25, self.y - 40, 50, 10))
+            pygame.draw.rect(screen, GREEN, (self.x - 25, self.y - 40, self.delivery_progress / 2, 10))
+            
+        # Draw status text
+        status_text = font.render(f"Delivery: {self.state}", True, TEXT_COLOR)
+        screen.blit(status_text, (self.x - 40, self.y + 30))
+        
+        # Draw upgrade level
+        level_text = font.render(f"Lvl: {self.upgrade_level}", True, TEXT_COLOR)
+        screen.blit(level_text, (self.x - 15, self.y + 50))
+
+class Customer:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.order = None
+        self.patience = 100
+        self.satisfaction = 100
+        self.order_time = 0
+        
+    def update(self):
+        if self.order and self.order.status != "delivered":
+            self.patience -= 0.1
+            self.order_time += 1
+            if self.patience < 0:
+                self.patience = 0
+    
+    def draw(self, screen):
+        # Draw customer
+        color = RED if self.patience < 30 else GREEN if self.patience > 70 else YELLOW
+        pygame.draw.circle(screen, color, (self.x, self.y), 15)
+        
+        # Draw patience meter
+        pygame.draw.rect(screen, (200, 200, 200), (self.x - 20, self.y - 30, 40, 5))
+        pygame.draw.rect(screen, color, (self.x - 20, self.y - 30, self.patience * 0.4, 5))
+
+class Order:
+    def __init__(self, customer):
+        self.customer = customer
+        self.status = "ordered"  # ordered, preparing, cooking, cooked, delivering, delivered
+        self.value = random.randint(15, 25)
+        customer.order = self
+        
+    def draw(self, x, y, screen):
+        # Draw order status
+        status_colors = {
+            "ordered": RED,
+            "preparing": YELLOW,
+            "cooking": YELLOW,
+            "cooked": BLUE,
+            "delivering": GREEN,
+            "delivered": (100, 100, 100)
+        }
+        
+        color = status_colors.get(self.status, (100, 100, 100))
+        pygame.draw.circle(screen, color, (x, y), 10)
+        
+        # Draw status text
+        status_text = font.render(self.status, True, TEXT_COLOR)
+        screen.blit(status_text, (x + 15, y - 10))
+        
+        # Draw value
+        value_text = font.render(f"${self.value}", True, TEXT_COLOR)
+        screen.blit(value_text, (x - 10, y + 15))
+
+# Create game objects
+chef = Chef()
+oven = Oven()
+delivery_person = DeliveryPerson()
+
+customers = [
+    Customer(600, 300),
+    Customer(700, 400),
+    Customer(500, 500)
+]
+
+orders = []
+next_order_time = 0
+money = 200
+score = 0
+selected_item = None
+game_speed = 1.0
+
+# Control instructions
+instructions = [
+    "1,2,3: Select Chef, Oven, Delivery",
+    "U: Upgrade selected item",
+    "+/-: Adjust game speed",
+    "R: Restock ingredients ($50)"
+]
+
+# Main game loop
+running = True
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            # Selection controls
+            if event.key == pygame.K_1:
+                selected_item = chef
+                chef.selected = True
+                oven.selected = False
+                delivery_person.selected = False
+            elif event.key == pygame.K_2:
+                selected_item = oven
+                chef.selected = False
+                oven.selected = True
+                delivery_person.selected = False
+            elif event.key == pygame.K_3:
+                selected_item = delivery_person
+                chef.selected = False
+                oven.selected = False
+                delivery_person.selected = True
+                
+            # Upgrade control
+            elif event.key == pygame.K_u and selected_item:
+                if money >= selected_item.cost_to_upgrade:
+                    if selected_item.upgrade():
+                        money -= selected_item.cost_to_upgrade
+                        
+            # Game speed controls
+            elif event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
+                game_speed = min(3.0, game_speed + 0.5)
+            elif event.key == pygame.K_MINUS:
+                game_speed = max(0.5, game_speed - 0.5)
+                
+            # Restock ingredients
+            elif event.key == pygame.K_r and money >= 50:
+                money -= 50
+                chef.speed += 0.2  # Temporary speed boost
+    
+    # Generate new orders occasionally
+    next_order_time -= 1 * game_speed
+    if next_order_time <= 0 and len(orders) < 5:
+        available_customers = [c for c in customers if c.order is None]
+        if available_customers:
+            customer = random.choice(available_customers)
+            orders.append(Order(customer))
+            next_order_time = random.randint(100, 200) / game_speed
+    
+    # Update game objects
+    for i in range(int(game_speed)):
+        chef.update(orders, oven)
+        oven.update()
+        delivery_person.update(orders)
+        
+        for customer in customers:
+            customer.update()
+        
+        # Complete delivered orders and get money
+        for order in orders[:]:
+            if order.status == "delivered":
+                money += order.value
+                score += order.value
+                if order.customer:
+                    order.customer.order = None
+                orders.remove(order)
+    
+    # Draw everything
+    screen.fill(BACKGROUND)
+    
+    # Draw kitchen area
+    pygame.draw.rect(screen, KITCHEN_COLOR, (50, 50, 350, 200), border_radius=10)
+    pygame.draw.rect(screen, DELIVERY_COLOR, (450, 50, 300, 200), border_radius=10)
+    
+    # Draw titles
+    kitchen_text = title_font.render("KITCHEN", True, TEXT_COLOR)
+    delivery_text = title_font.render("DELIVERY", True, TEXT_COLOR)
+    customers_text = title_font.render("CUSTOMERS", True, TEXT_COLOR)
+    screen.blit(kitchen_text, (180, 20))
+    screen.blit(delivery_text, (550, 20))
+    screen.blit(customers_text, (350, 270))
+    
+    # Draw game objects
+    chef.draw(screen)
+    oven.draw(screen)
+    delivery_person.draw(screen)
+    
+    for i, customer in enumerate(customers):
+        customer.draw(screen)
+    
+    # Draw orders
+    for i, order in enumerate(orders):
+        order.draw(100 + i * 30, 300, screen)
+    
+    # Draw stats
+    stats_text = font.render(f"Money: ${money} | Score: {score} | Speed: {game_speed}x", True, TEXT_COLOR)
+    screen.blit(stats_text, (20, 20))
+    
+    # Draw control instructions
+    for i, instruction in enumerate(instructions):
+        instr_text = font.render(instruction, True, TEXT_COLOR)
+        screen.blit(instr_text, (20, HEIGHT - 100 + i * 20))
+    
+    # Draw upgrade info if something is selected
+    if selected_item:
+        upgrade_text = font.render(f"Upgrade cost: ${selected_item.cost_to_upgrade}", True, TEXT_COLOR)
+        screen.blit(upgrade_text, (WIDTH - 200, 20))
+    
+    pygame.display.flip()
+    clock.tick(60)
+
+pygame.quit()
