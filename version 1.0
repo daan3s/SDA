@@ -1,0 +1,83 @@
+import pygame
+import random
+import math
+
+#initialize game
+pygame.init()
+clock = pygame.time.Clock()
+
+# Get display info and set fullscreen in one line
+screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+
+# define constants
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+
+class italiën_restaurant:
+    def __init__(self):
+       
+       pass 
+
+
+class chef:
+    def __init__(self, x, y):
+        self.x = x #location chef
+        self.y = y
+        self.image = pygame.image.load(image.name).convert_alpha() 
+        self.place = self.image.get_place(center = (x, y))
+        self.state =  "waiting"
+        self.holding = None
+        self.currentPizza = None
+        self.speed = 0.25
+        self.duration = 0
+
+
+    
+    def preparingPizza(self,):
+        self.state = "preparing pizza"
+        if self.state == "preparing pizza":
+            self.duration += self.speed
+            if self.duration >= 100:
+                self.state == "cooking pizza" 
+                self.duration = 0
+         
+            print("chef put the pizza in the oven")
+
+
+    def preparingPasta(self,):
+        self.state = "preparing pasta"
+        if self.state == "preparing pasta":
+            self.duration += self.speed
+            if self.duration >= 100:
+                self.state == "cooking pasta"
+                self.duration = 0
+        
+            print("chef put the pasta in the pan")
+
+
+    def notAvalable(self):
+        self.state = "not available"
+        if 
+        print("chef is only available from 15:00 - 23:00")
+
+
+
+
+
+
+
+
+        # main loop
+        running = True
+
+        while running:
+
+            #color of window
+            screen.fill(255, 255, 255)
+
+            screen.blit(self.image, self.place)
+
+            pygame.display.flip()
+            clock.tick(60)
+
+
