@@ -1,6 +1,10 @@
 import pygame
 import random
 import math
+import time
+import datetime
+
+
 
 #initialize game
 pygame.init()
@@ -13,27 +17,48 @@ screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
-class italiën_restaurant:
+class Italiën_restaurant:
     def __init__(self):
-       
-       pass 
+         self.clock = pygame.time.Clock()
+         self.game_start_time = datetime.datetime.now()
+         self.last_real_time_update = time.time()
+         self.openingTime = datetime.time(15, 0)
+         self.closingTime = datetime.time(23, 0)
+         self.restaurant_open = False
+         
+         
+    def check_opening_hours(self):
+         current_time = datetime.datetime.now().time()
+         self.restaurant_open = self.openingTime <= current_time <= self.closingTime
+         return self.restaurant_open
+    
 
+    
+
+    def get_real_world_time(self):
+        return datetime.datetime.now()
+    
+    def get_elaspsed_real_time(self):
+        return datetime.datetime.now() - self.game_start_time
+       
 
 class chef:
     def __init__(self, x, y):
         self.x = x #location chef
         self.y = y
-        self.image = pygame.image.load(image.name).convert_alpha() 
+        self.image = pygame.image.load(image.name).convert_alpha() #making image of chef
         self.place = self.image.get_place(center = (x, y))
         self.state =  "waiting"
         self.holding = None
         self.currentPizza = None
         self.speed = 0.25
         self.duration = 0
+      
 
 
-    
-    def preparingPizza(self,):
+
+
+    def preparingPizza(self):
         self.state = "preparing pizza"
         if self.state == "preparing pizza":
             self.duration += self.speed
@@ -55,14 +80,7 @@ class chef:
             print("chef put the pasta in the pan")
 
 
-    def notAvalable(self):
-        self.state = "not available"
-        if 
-        print("chef is only available from 15:00 - 23:00")
-
-
-
-
+    
 
 
 
@@ -71,6 +89,22 @@ class chef:
         running = True
 
         while running:
+
+            #real-time updating
+            current_time = time.time()
+            if current_time - self.last_real_time_update >= 1.0:
+                self.last_real_time_update = current_time
+                real_time = self.get_real_world_time()
+                elapsed = self.get_elapsed_real_time()
+                print(f"Real time:  {real_time.strftime('%H:%M:$S')}")
+                print(f"system running for: {elapsed}")
+
+                #display real time
+                real_time_text = self.font.render(f"real time: {self.get_real_world_time().strftime('%H:%M:%S:')}" 
+                                                  True, (255, 255, 255))
+                    
+                
+
 
             #color of window
             screen.fill(255, 255, 255)
