@@ -25,15 +25,21 @@ class Italiën_restaurant:
          self.openingTime = datetime.time(15, 0)
          self.closingTime = datetime.time(23, 0)
          self.restaurant_open = False
-         
+                  
          
     def check_opening_hours(self):
          current_time = datetime.datetime.now().time()
          self.restaurant_open = self.openingTime <= current_time <= self.closingTime
          return self.restaurant_open
     
-
-    
+    def get_openStatus(self):
+        if self.restaurant_open == True:
+            return "OPEN"
+        else: 
+            return "CLOSED"
+        
+    def get_opening_hours(self):
+        return f"open: {self.openingTime.strftime('%H:%M')} - {self.closingTime.strftime('%H:%M')}"
 
     def get_real_world_time(self):
         return datetime.datetime.now()
