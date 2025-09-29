@@ -3,6 +3,8 @@ import random
 import math
 import time
 import datetime
+import pygwidgets
+
 
 
 
@@ -10,7 +12,7 @@ import datetime
 pygame.init()
 clock = pygame.time.Clock()
 
-# Get display info and set fullscreen in one line
+# set window to full screen 
 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 
 # define constants
@@ -18,19 +20,38 @@ WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
 class Italiën_restaurant:
-    def __init__(self):
+    def __init__(self, x, y):
          self.clock = pygame.time.Clock()
          self.game_start_time = datetime.datetime.now()
          self.last_real_time_update = time.time()
          self.openingTime = datetime.time(15, 0)
          self.closingTime = datetime.time(23, 0)
          self.restaurant_open = False
+
+         self.image_icon = pygame.image.load(image.name).convert_alpha()# image of restaurant icon
+         self.place_icon = self.image_icon.get_place(center = (x, y))
+         self.width_icon = 100 # not actual width and height
+         self.height_icon = 100
+         self.x = x #position restaurant
+         self.y = y
+         self.image_size = (self.width, self.height)
+         self.rect = pygame.Rect(self.x, self.y, self.image_size)
+
+         self.image = pygame.image.load(image.name).convert_alpha # image whole restaurant
+         maxWidth = screen 
+         maxHeiht = screen
+         self.place = self.image.get_place(center = (maxWidth, maxHeiht))
+
+
+         
+         
                   
          
     def check_opening_hours(self):
          current_time = datetime.datetime.now().time()
          self.restaurant_open = self.openingTime <= current_time <= self.closingTime
          return self.restaurant_open
+    
     
     def get_openStatus(self):
         if self.restaurant_open == True:
@@ -46,8 +67,12 @@ class Italiën_restaurant:
     
     def get_elaspsed_real_time(self):
         return datetime.datetime.now() - self.game_start_time
-       
+    
+    def open_restaurant_icon(self, mousepoint):
+        return self.rect.collidepoint(mousepoint)
 
+
+        
 class chef:
     def __init__(self, x, y):
         self.x = x #location chef
@@ -56,14 +81,14 @@ class chef:
         self.place = self.image.get_place(center = (x, y))
         self.state =  "waiting"
         self.holding = None
-        self.currentPizza = None
+        self.currentPizza_pasta = None
         self.speed = 0.25
         self.duration = 0
       
 
 
 
-
+    # preparing pizza state
     def preparingPizza(self):
         self.state = "preparing pizza"
         if self.state == "preparing pizza":
@@ -74,7 +99,7 @@ class chef:
          
             print("chef put the pizza in the oven")
 
-
+    # preparing pasta state
     def preparingPasta(self,):
         self.state = "preparing pasta"
         if self.state == "preparing pasta":
@@ -95,6 +120,10 @@ class chef:
         running = True
 
         while running:
+            for event in pygame.event.get():
+                if event.type == quit :
+                    running = False
+                elif event.type == mousebuttondown:
 
             #real-time updating
             current_time = time.time()
@@ -115,6 +144,7 @@ class chef:
             #color of window
             screen.fill(255, 255, 255)
 
+            # display image
             screen.blit(self.image, self.place)
 
             pygame.display.flip()
