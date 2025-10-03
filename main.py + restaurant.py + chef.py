@@ -70,10 +70,14 @@ class Italiën_restaurant:
         
 class chef:
     def __init__(self, x, y):
-        self.x = x #location chef
-        self.y = y
-        self.image = pygame.image.load("chef.png").convert_alpha() #making image of chef
-        self.rect = self.image.get_rect(center = (x, y))
+        self.x = 500 #location chef
+        self.y = 500
+        self.image_chef = pygame.image.load("chef.png").convert_alpha() #making image of chef
+        self.chef_width = 100
+        self.chef_height = 100
+        self.surface_chef = pygame.transform.scale(self.image_chef, (self.chef_width, self.chef_height))
+        self.rect_chef = self.image_chef.get_place(center = (self.x, self.y))
+
         self.state =  "waiting"
         self.holding = None
 
@@ -243,7 +247,7 @@ class chef:
                 self.state = "waiting"
                 self.duration = 0
                 item_name = self.get_item_description(self.current_item)
-                print(f"✅ Finished cooking {item_name}!")
+                print(f"Finished cooking {item_name}!")
                 self.current_item = None
 
     def get_item_description(self, item):
@@ -254,12 +258,11 @@ class chef:
             toppings = ', '.join(item['toppings']) if item['toppings'] else 'no toppings'
             return f"{item['pasta type']} with {item['sauce type']} sauce and {toppings}"
 
-    # FIXED: Remove duplicate methods, use update_cooking instead
     def update(self):
         self.update_cooking()
 
-    def draw(self, screen):
-        screen.blit(self.image, self.rect)
+    def show_chef(self):
+        screen.blit(self.image_chef, self.rect_chef)
     
 
         # main loop
@@ -281,8 +284,7 @@ class chef:
                 print(f"system running for: {elapsed}")
 
                 #display real time
-                real_time_text = self.font.render(f"real time: {self.get_real_world_time().strftime('%H:%M:%S:')}" 
-                                                True, (255, 255, 255))
+                real_time_text = self.font.render(f"real time: {self.get_real_world_time().strftime('%H:%M:%S:')}" True, (255, 255, 255))
                         
                 
 
