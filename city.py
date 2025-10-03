@@ -7,17 +7,17 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.FULLSCREE
 
 class city:
     def __init__(self, x, y):
-        self.image_city = pygame.image.load(image.name).convert_alpha
+        self.image_city = pygame.image.load('city_map.jpg').convert_alpha
         maxWidth = SCREEN_WIDTH
         maxHeight = SCREEN_HEIGHT
         self.place_city = self.image.get_place(center = (maxWidth, maxHeight))
 
-        self.image_house = pygame.image.load(image.name).convert_alpha
+        self.image_house = pygame.image.load('house_icon.png').convert_alpha
         width_house = 50
         height_house = 50
         self.place_house = self.image.get_place(center = (width_house, height_house))
 
-        self.image_icon = pygame.image.load(image.name).convert_alpha()# image of restaurant icon
+        self.image_icon = pygame.image.load('italiën_restaurant.png').convert_alpha()# image of restaurant icon
         self.place_icon = self.image_icon.get_place(center = (x, y))
         self.width_icon = 50 # not actual width and height#######################################################################
         self.height_icon = 50
@@ -41,6 +41,8 @@ class city:
 
     def open_restaurant_icon(self, mousepoint):
         return self.rect.collidepoint(mousepoint)
+    
+    
     
     
     
