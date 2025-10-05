@@ -276,8 +276,8 @@ class chef:
 
             #real-time updating
             current_time = time.time()
-            if current_time - self.last_real_time_update >= 1.0:
-                self.last_real_time_update = current_time
+            if current_time - last_real_time_update >= 1.0:
+                last_real_time_update = current_time
                 real_time = self.get_real_world_time()
                 elapsed = self.get_elapsed_real_time()
                 print(f"Real time:  {real_time.strftime('%H:%M:$S')}")
