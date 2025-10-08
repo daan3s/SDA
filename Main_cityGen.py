@@ -3,10 +3,10 @@ from pygame.locals import *
 import random
 import time
 import datetime
-from Oven import *
-from Pizza import *
-from city import *
-from Italiën_restaurant import * 
+
+
+from city_v2 import *
+
 import sys
 
 #define constants
