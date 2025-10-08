@@ -272,10 +272,11 @@ class chef:
             for event in pygame.event.get():
                 if event.type == quit :
                     running = False
-                elif event.type == pygame.MOUSEBUTTONDOWN:###################################################
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    return 
 
             #real-time updating
-            current_time = time.time()
+            #current_time = time.time()
             if current_time - last_real_time_update >= 1.0:
                 last_real_time_update = current_time
                 real_time = self.get_real_world_time()
@@ -284,7 +285,7 @@ class chef:
                 print(f"system running for: {elapsed}")
 
                 #display real time
-                real_time_text = self.font.render(f"real time: {self.get_real_world_time().strftime('%H:%M:%S:')}" True, (255, 255, 255))
+                #real_time_text = self.font.render(f"real time: {self.get_real_world_time().strftime('%H:%M:%S:')}" True, (255, 255, 255))
                         
                 
 

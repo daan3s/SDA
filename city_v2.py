@@ -1,6 +1,7 @@
 import pygame
 from pygame.locals import *
 import random
+from Main_cityGen import *
 
 pygame.init()
 screen_info = pygame.display.Info()
@@ -43,8 +44,14 @@ class city:
             self.place_icon = (self.xi, self.yi)
             screen.blit(self.image_icon, self.place_icon)
 
-    def open_restaurant_icon(self, mousepoint):
-        return self.rect.collidepoint(mousepoint)
+    def open_restaurant_icon(self, mousepoint, ):
+        if pygame.MOUSEBUTTONDOWN:
+            if restPos[0].collidepoint(mousepoint): 
+                return "open restaurant 1"
+            elif restPos[1].collidepoint(mousepoint):
+                return "open restaurant 2"
+            elif restPos[2].collidepoint(mousepoint):
+                return "open restaurant 3"
     
     
     

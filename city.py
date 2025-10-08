@@ -1,6 +1,7 @@
 import pygame
 import random
 from pygame.locals import *
+from Main_cityGen import *
 
 screen_info = pygame.display.Info()
 SCREEN_WIDTH = screen_info.current_w
@@ -23,7 +24,7 @@ class city:
         width_house = 50
         height_house = 50
         self.surface_house = pygame.transform.scale(self.image_house, (width_house, height_house))
-        self.rect_house = self.surface_city.get_rect(center = (self.x_house, self.y_house))
+        self.rect_house = self.surface_city.get_rect(topLeft = (self.x_house, self.y_house))
 
         self.image_restaurant_icon = pygame.image.load('italiën_restaurant.png').convert_alpha()# image of restaurant icon
         self.width_icon = 50 # not actual width and height#######################################################################
@@ -31,7 +32,21 @@ class city:
         self.x_restaurant = 400 #position restaurant
         self.y_restaurant = 400
         self.surface_restaurant = pygame.transform.scale(self.image_restaurant_icon, (self.width_icon, self.height_icon))
-        self.rect_restaurant_icon = self.image_icon.get_place(center = (self.x_restaurant, self.y_restaurant))
+        self.rect_restaurant_icon = self.surface_restaurant.get_rect(topLeft = (restPos))
+        restPos = [(60,315),(500,380),(700,60)]
+        
+        self.rect_restaurant_rects = []
+        for pos in restPos:
+            rect = self.surface_restaurant.get_rect(topleft=pos)
+            self.restaurant_rects.append(rect)
+
+        # Check clicks
+    def check_restaurant_clicks(self, mouse_pos):
+        for i, rect in enumerate(self.restaurant_rects):
+            if rect.collidepoint(mouse_pos):
+                return i  
+        return None
+
         
 
 

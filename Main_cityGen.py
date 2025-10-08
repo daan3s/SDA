@@ -74,3 +74,8 @@ main()
             #screen.blit(image, place)
 
             #pygame.display.flip()
+
+            #if event.type == pygame.MOUSEBUTTONDOWN:
+             #   clicked_index = self.check_restaurant_clicks(event.pos)
+            #if clicked_index is not None:
+             #   print(f"Restaurant {clicked_index + 1} clicked!")

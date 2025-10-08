@@ -40,4 +40,4 @@ class pan:
         self.pastaReady = True
         print(f"Pan {self.panID}: pasta is ready for delivery" )
 
-    def 
+    
