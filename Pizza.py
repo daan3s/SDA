@@ -2,11 +2,10 @@ import pygame
 from pygame.locals import *
 import random
 
-statusList = ['Raw', 'Heating up', 'Done', 'On its way', 'Delivered']
+statusList = ['Plain', 'Raw', 'Heating up', 'Done']
 
 class Pizza():
-    def __init__(self, window, toppings, pizzaSize, pizzaID):
-        self.window = window
+    def __init__(self, toppings, pizzaSize, pizzaID):
         self.pizzaID = pizzaID
         self.toppingsList = toppings #get the toppings of the pizza
         self.price = len(toppings) * 0.75 #set a price based on toppings
@@ -22,21 +21,24 @@ class Pizza():
         if (self.size == 'Small'):
             return self.price + 1
         
-    def GetStatus(self, PizzaStatus):#Determine status of pizza
-        self.status = statusList[PizzaStatus] 
+    def GetStatus(self):#Determine status of pizza 
         return self.status
     
-    def IsBaking(self, InOven, maxTime):
-        if (InOven):
+    def GetID(self):#Determine status of pizza 
+        return self.pizzaID
+    
+    def IsBaking(self, maxTime, InOven): 
+        if (self.status == 'Raw'): 
             if (self.bakingTime < maxTime):
                 self.bakingTime = self.bakingTime + 1
                 self.status = statusList[1]
             else:
                 self.status = statusList[2]
 
-    
     def GetDescription(self):
-        for i in self.toppingsList:
+        self.toppings = ''
+        for i in range(0,len(self.toppingsList)):
             self.toppings = self.toppings + self.toppingsList[i] + ', ' 
-        self.PizzaDescription = self.pizzaID + ': The pizza with toppings: ' + self.toppings + 'and size: '+ self.size + 'has status ' + self.status + '.'
+        self.PizzaDescription = str(self.pizzaID) + ': The pizza with toppings: ' + self.toppings + 'and size: '+ self.size + ' has status ' + self.status + '.'
+        return self.PizzaDescription
 

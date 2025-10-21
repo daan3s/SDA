@@ -1,7 +1,6 @@
 import pygame
 from pygame.locals import *
 import random
-from Main_cityGen import *
 
 pygame.init()
 screen_info = pygame.display.Info()
@@ -12,18 +11,18 @@ houseCoords = [(400,510),(200,420),(620,465),(810,385),(690,235),(300,240),(65,9
 
 class city:
     def __init__(self):
-        self.image_city = pygame.image.load('images\city_map.jpg')
+        self.image_city = pygame.image.load('FinalAssignment\images\city_map.jpg')
         self.maxWidth = 0
         self.maxHeight = 0
 
-        self.image_house = pygame.image.load('images\house_icon.png')
+        self.image_house = pygame.image.load('FinalAssignment\images\house_icon.png')
         pygame.transform.smoothscale_by(self.image_house,(50,50))
         i = random.randint(0,len(houseCoords)-1)
         width_house = houseCoords[i][0]
         height_house = houseCoords[i][1]
         self.place_house = (width_house, height_house)
 
-        self.image_icon = pygame.image.load('images\italiën_restaurant.png')# image of restaurant icon
+        self.image_icon = pygame.image.load('FinalAssignment\images\italiën_restaurant.png')# image of restaurant icon
         self.width_icon = 50 # not actual width and height#######################################################################
         self.height_icon = 50
         self.image_size = (self.width_icon, self.height_icon)   
@@ -44,14 +43,8 @@ class city:
             self.place_icon = (self.xi, self.yi)
             screen.blit(self.image_icon, self.place_icon)
 
-    def open_restaurant_icon(self, mousepoint, ):
-        if pygame.MOUSEBUTTONDOWN:
-            if restPos[0].collidepoint(mousepoint): 
-                return "open restaurant 1"
-            elif restPos[1].collidepoint(mousepoint):
-                return "open restaurant 2"
-            elif restPos[2].collidepoint(mousepoint):
-                return "open restaurant 3"
+    def open_restaurant_icon(self, mousepoint):
+        return self.rect.collidepoint(mousepoint)
     
     
     
