@@ -3,11 +3,12 @@ from pygame.locals import *
 import random
 import time
 import datetime
-
-
+from Pizza import *
 from city_v2 import *
-
+from Pasta import *
+from Order import *
 import sys
+
 
 #define constants
 FRAMES_PER_SECOND = 30 
@@ -16,7 +17,7 @@ restList = []
 restPos = [(60,315),(500,380),(700,60)]
 Eindhoven = city()
 running = True
-
+orderBuffer = [[1000, 'pizza', 'medium', 'mushrooms','tuna'],[2000, 'pasta', 'gnocchi', 'pesto', 'chicken']]
 
 
 def main(): # main loop
@@ -27,10 +28,11 @@ def main(): # main loop
     #load assets
 
     #init variables
-    #for i in range(0, N_Restaurants):
-        #x = random.randint(100,SCREEN_WIDTH-100)
-        #y = random.randint(100,SCREEN_HEIGHT-100)
-       # restList.append(Italiën_restaurant(x,y,SCREEN_WIDTH,SCREEN_HEIGHT,i))
+    pizza = Pizza(['tuna'], 'Large', 0)
+    pizza.status = 'Done'
+    pasta = Pasta(['tuna'], 'Spaghetti', 'Alfredo', 0)
+    pasta.status = 'Done'
+    orderID = 1000
 
     #loop forever
     while running:
@@ -38,9 +40,34 @@ def main(): # main loop
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            #elif event.type == pygame.MOUSEBUTTONDOWN:###################################################
+
+
 
         #per frame actions
+        if (orderID == 9999):
+            orderID = 1000
+        
+
+
+        if (pizza.GetStatus() == 'Done' or pasta.GetStatus() == 'Done'): #if the pizza that is worked on is done:
+            if (pizza.GetID() == Order.GetID() or pasta.GetID() == Order.GetID()):
+                order.status = 'prepared'
+            if (orderBuffer[0][0] == 'pizza'): #if the first item in the buffer is pizza
+                toppings = orderBuffer[0][2:]
+                pizza = Pizza(toppings, orderBuffer[0][2], orderBuffer[0][0])#make new pizza item
+                orderBuffer.pop(0)
+                orderID = orderBuffer[0][0] + 1
+            elif(orderBuffer[0][0] == 'pasta'):#if the first item in the buffer is pasta
+                toppings = orderBuffer[0][3:]
+                pasta = Pasta(toppings, orderBuffer[0][2], orderBuffer[0][3], orderBuffer[0][0])#make new pasta item
+                orderID = orderBuffer[0][0] + 1
+                orderBuffer.pop(0)
+
+        
+
+       # print(pizza.GetDescription())
+
+
 
         #draw window elements
         screen.fill((0,0,0))
@@ -53,29 +80,3 @@ def main(): # main loop
         clock.tick(FRAMES_PER_SECOND)
 
 main()
-
-        #real-time updating
-        #current_time = time.time()
-        #if current_time - last_real_time_update >= 1.0:
-        #    last_real_time_update = current_time
-        #    real_time = get_real_world_time()
-        #    elapsed = get_elapsed_real_time()
-        #    print(f"Real time:  {real_time.strftime('%H:%M:$S')}")
-        #    print(f"system running for: {elapsed}")
-
-            #display real time
-            #real_time_text = self.font.render(f"real time: {self.get_real_world_time().strftime('%H:%M:%S:')}" True, (255, 255, 255))
-                        
-
-            #color of window
-            #screen.fill(255, 255, 255)
-
-            # display image
-            #screen.blit(image, place)
-
-            #pygame.display.flip()
-
-            #if event.type == pygame.MOUSEBUTTONDOWN:
-             #   clicked_index = self.check_restaurant_clicks(event.pos)
-            #if clicked_index is not None:
-             #   print(f"Restaurant {clicked_index + 1} clicked!")
