@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
+import socket
+import json
 
 # Global variables to track ingredient states
 ingredient_states = {}
@@ -13,6 +15,17 @@ selected_sauce = None
 pasta_ingredient_states = {}
 pasta_type_buttons = {}  # Dictionary to track pasta type buttons
 sauce_buttons = {}  # Dictionary to track sauce buttons
+
+# Counter for generating unique IDs
+pizza_id_counter = 1000
+pasta_id_counter = 2000
+
+# Network settings - Default to broadcast, but can be changed to specific IP
+TARGET_PORT = 5003
+TARGET_IP = "145.93.161.150"  # Default: broadcast to all
+
+
+# TARGET_IP = "192.168.1.100"  # Uncomment and change to specific IP
 
 
 def order_pizza():
@@ -110,7 +123,7 @@ def select_sauce(sauce, button):
 
 
 def add_pasta_to_basket():
-    global selected_pasta_type, selected_sauce, pasta_ingredient_states
+    global selected_pasta_type, selected_sauce, pasta_ingredient_states, pasta_id_counter
 
     # Check if pasta type is selected
     if not selected_pasta_type:
@@ -128,8 +141,13 @@ def add_pasta_to_basket():
     # Calculate extra cost for toppings
     topping_cost = len(selected_pasta_ingredients) * 0.75
 
+    # Generate unique pasta ID
+    pasta_id = pasta_id_counter
+    pasta_id_counter += 1
+
     # Create order dictionary
     order = {
+        "id": pasta_id,
         "type": "Pasta",
         "pasta_type": selected_pasta_type,
         "sauce": selected_sauce,
@@ -145,7 +163,7 @@ def add_pasta_to_basket():
 
 
 def add_to_basket():
-    global selected_size, ingredient_states
+    global selected_size, ingredient_states, pizza_id_counter
 
     # Check if a size is selected
     if not selected_size:
@@ -158,8 +176,13 @@ def add_to_basket():
     # Calculate extra cost for toppings
     topping_cost = len(selected_ingredients) * 0.75
 
+    # Generate unique pizza ID
+    pizza_id = pizza_id_counter
+    pizza_id_counter += 1
+
     # Create order dictionary
     order = {
+        "id": pizza_id,
         "type": "Pizza",
         "size": selected_size,
         "ingredients": selected_ingredients,
@@ -180,6 +203,112 @@ def view_basket():
 
     # Create basket screen
     create_basket_screen()
+
+
+def format_order_data():
+    """Format the basket data as requested"""
+    formatted_orders = []
+
+    for item in basket:
+        if item['type'] == 'Pizza':
+            # Format: [pizzaID, 'pizza', size, ingredient1, ingredient2, ...]
+            order_data = [item['id'], 'pizza', item['size'].lower()]
+            # Add all ingredients
+            order_data.extend([ingredient.lower() for ingredient in item['ingredients']])
+            formatted_orders.append(order_data)
+        else:  # Pasta
+            # Format: [pastaID, 'pasta', pasta_type, sauce, ingredient1, ingredient2, ...]
+            order_data = [item['id'], 'pasta', item['pasta_type'].lower(), item['sauce'].lower()]
+            # Add all ingredients
+            order_data.extend([ingredient.lower() for ingredient in item['ingredients']])
+            formatted_orders.append(order_data)
+
+    return formatted_orders
+
+
+def configure_target_ip():
+    """Allow user to set specific target IP"""
+    global TARGET_IP
+
+    new_ip = simpledialog.askstring(
+        "Configure Target IP",
+        "Enter the kitchen laptop's IP address:",
+        initialvalue=TARGET_IP
+    )
+
+    if new_ip:
+        TARGET_IP = new_ip
+        messagebox.showinfo("Success", f"Target IP set to: {TARGET_IP}")
+
+
+def send_order():
+    """Send order to target IP (specific or broadcast)"""
+    if not basket:
+        messagebox.showwarning("Empty Basket", "Your basket is empty. Please add items before sending.")
+        return
+
+    # Format the order data
+    formatted_orders = format_order_data()
+
+    try:
+        # Create UDP socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        # If using broadcast address, enable broadcast option
+        if TARGET_IP == "255.255.255.255":
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+        # Prepare data to send
+        data_to_send = {
+            "orders": formatted_orders,
+            "total_items": len(basket),
+            "source": "FoodOrderingApp"
+        }
+
+        # Convert to JSON and send
+        json_data = json.dumps(data_to_send)
+        sock.sendto(json_data.encode('utf-8'), (TARGET_IP, TARGET_PORT))
+        sock.close()
+
+        if TARGET_IP == "255.255.255.255":
+            message = f"Order broadcasted to all devices on port {TARGET_PORT}!"
+        else:
+            message = f"Order sent to {TARGET_IP}:{TARGET_PORT}!"
+
+        messagebox.showinfo("Success", f"{message}\n\nOrder data:\n{formatted_orders}")
+
+        # Clear basket after successful payment
+        basket.clear()
+
+        # Return to main screen
+        create_main_screen()
+
+    except Exception as e:
+        messagebox.showerror("Send Error", f"Failed to send order: {str(e)}\n\nTarget: {TARGET_IP}:{TARGET_PORT}")
+
+
+def process_payment():
+    """Process payment and send order directly"""
+    if not basket:
+        messagebox.showwarning("Empty Basket", "Your basket is empty. Please add items before paying.")
+        return
+
+    # Format the order data
+    formatted_orders = format_order_data()
+
+    target_info = "all devices on network" if TARGET_IP == "255.255.255.255" else TARGET_IP
+
+    # Ask for confirmation before sending
+    confirm = messagebox.askyesno(
+        "Confirm Payment",
+        f"Ready to send order to kitchen?\n\n"
+        f"Target: {target_info}\n"
+        f"Total items: {len(basket)}\n\n"
+        f"Send order now?"
+    )
+
+    if confirm:
+        send_order()
 
 
 def create_basket_screen():
@@ -216,10 +345,10 @@ def create_basket_screen():
             # Item details - different format for pizza vs pasta
             if item['type'] == 'Pizza':
                 ingredients_text = ", ".join(item['ingredients']) if item['ingredients'] else "No extra ingredients"
-                item_text = f"Item {i + 1}: {item['type']} - {item['size']}\nIngredients: {ingredients_text}\nToppings cost: €{item['topping_cost']:.2f}"
+                item_text = f"Item {i + 1}: {item['type']} (ID: {item['id']}) - {item['size']}\nIngredients: {ingredients_text}\nToppings cost: €{item['topping_cost']:.2f}"
             else:  # Pasta
                 ingredients_text = ", ".join(item['ingredients']) if item['ingredients'] else "No extra ingredients"
-                item_text = f"Item {i + 1}: {item['type']}\nPasta: {item['pasta_type']}\nSauce: {item['sauce']}\nIngredients: {ingredients_text}\nToppings cost: €{item['topping_cost']:.2f}"
+                item_text = f"Item {i + 1}: {item['type']} (ID: {item['id']})\nPasta: {item['pasta_type']}\nSauce: {item['sauce']}\nIngredients: {ingredients_text}\nToppings cost: €{item['topping_cost']:.2f}"
 
             item_label = tk.Label(
                 item_frame,
@@ -232,9 +361,39 @@ def create_basket_screen():
             )
             item_label.pack(padx=10, pady=10, fill='x')
 
+    # Buttons frame
+    buttons_frame = tk.Frame(root, bg='white')
+    buttons_frame.pack(pady=20)
+
+    # Pay & Send button
+    pay_button = tk.Button(
+        buttons_frame,
+        text="Pay & Send to Kitchen",
+        font=("Arial", 12, "bold"),
+        bg="#4CAF50",
+        fg="white",
+        width=20,
+        height=2,
+        command=process_payment
+    )
+    pay_button.grid(row=0, column=0, padx=10, pady=5)
+
+    # Configure IP button
+    config_button = tk.Button(
+        buttons_frame,
+        text="Set Target IP",
+        font=("Arial", 10),
+        bg="#2196F3",
+        fg="white",
+        width=12,
+        height=1,
+        command=configure_target_ip
+    )
+    config_button.grid(row=1, column=0, padx=10, pady=5)
+
     # Back button
     back_button = tk.Button(
-        root,
+        buttons_frame,
         text="Back to Main Menu",
         font=("Arial", 12),
         bg="#cccccc",
@@ -243,7 +402,7 @@ def create_basket_screen():
         height=2,
         command=create_main_screen
     )
-    back_button.pack(pady=20)
+    back_button.grid(row=0, column=1, padx=10, pady=5)
 
 
 def create_pasta_screen():
@@ -582,7 +741,31 @@ def create_main_screen():
     )
     basket_label.pack(pady=10)
 
-    # View Basket Button (always visible)
+    # Target info
+    target_info = "All devices" if TARGET_IP == "255.255.255.255" else TARGET_IP
+    target_label = tk.Label(
+        root,
+        text=f"Target: {target_info}:{TARGET_PORT}",
+        font=("Arial", 10),
+        bg='white',
+        fg='gray'
+    )
+    target_label.pack(pady=5)
+
+    # Configure IP button
+    config_button = tk.Button(
+        root,
+        text="Set Target IP",
+        font=("Arial", 10),
+        bg="#2196F3",
+        fg="white",
+        width=12,
+        height=1,
+        command=configure_target_ip
+    )
+    config_button.pack(pady=5)
+
+    # View Basket Button
     view_basket_button = tk.Button(
         root,
         text="View Basket",
