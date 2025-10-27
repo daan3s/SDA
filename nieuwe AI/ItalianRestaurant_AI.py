@@ -27,6 +27,7 @@ class ItalianRestaurant:
         self.current_order = None # The order currently being processed/cooked/packaged
         self.products_ready = [] # Temporary storage for completed items (Pizza/Pasta)
         self.orders_completed_count = 0
+        self.completed_orders = []
         self.is_open = False # For City_AI display
         
         # Reference to the main system for callbacks
@@ -240,26 +241,15 @@ class ItalianRestaurant:
         return count
 
     def get_active_orders_status(self):
-        """Returns a list of simplified status dicts for the OrderStatusUI."""
+        """Returns a list of status dictionaries for active orders in this restaurant."""
         status_list = []
         added_order_ids = set()
         
-        # 1. Add order currently out for delivery (highest priority to show)
-        if self.delivery_in_progress_order:
-             order_id = self.delivery_in_progress_order['order_id']
-             order_data = {
-                'order_id': order_id,
-                'state': StoreState.DELIVERING.value,
-                'items_total': self.delivery_in_progress_order['total_items'],
-                'items_ready': self.delivery_in_progress_order['total_items'] 
-            }
-             status_list.append(order_data)
-             added_order_ids.add(order_id)
-        
-        # 2. Add the order currently being actively processed
+        # 1. Add current order details
         if self.current_order and self.current_order['order_id'] not in added_order_ids:
             order_id = self.current_order['order_id']
             order_data = {
+                'restaurant_name': self.Name, # NEW: Include restaurant name
                 'order_id': order_id,
                 'state': self.state.value, 
                 'items_total': self.current_order['total_items'],
@@ -268,11 +258,12 @@ class ItalianRestaurant:
             status_list.append(order_data)
             added_order_ids.add(order_id)
         
-        # 3. Add orders waiting in the queue (FIFO)
+        # 2. Add orders waiting in the queue (FIFO)
         for order in self.Orders:
             order_id = order['order_id']
             if order_id not in added_order_ids:
                 order_data = {
+                    'restaurant_name': self.Name, # NEW: Include restaurant name
                     'order_id': order_id,
                     'state': 'QUEUED',
                     'items_total': order['total_items'],
@@ -296,3 +287,99 @@ class ItalianRestaurant:
             'state': self.state.value,
             'queue_size': len(self.Orders)
         }
+    
+    def get_drone_states(self):
+        """Returns a list of status strings for all delivery drones."""
+        # Assuming self.DeliveryDrivers holds the drone objects
+        drone_states = []
+        for drone in self.DeliveryDrivers:
+            # Format: "Drone X: IDLE" or "Drone Y: TRAVELING (Order Z)"
+            status_text = f"Drone {drone.DroneID}: {drone.Status}"
+            drone_states.append(status_text)
+        return drone_states
+    
+    def complete_order(self, order_data):
+        """Called by DeliveryDrone when an order has been successfully delivered."""
+        order_id = order_data['order_id']
+        
+        # 1. Update Restaurant State & Counters
+        self.orders_completed_count += 1
+        self.delivery_in_progress_order = None
+        
+        # 2. Store as completed order (History)
+        order_data['final_status'] = 'DELIVERED'
+        order_data['completion_time'] = time.time() # Add timestamp
+        self.completed_orders.append(order_data)
+        
+        # 3. Notify system (removes from active list)
+        self.system_reference.handle_completed_order(order_data)
+        
+        # 4. Transition back to PREPARING or OPEN
+        if self.Orders:
+            self.state = StoreState.PREPARING
+        else:
+            self.state = StoreState.OPEN
+        print(f"[{self.Name}] Order {order_id} DELIVERED. Transition: DELIVERING -> {self.state.value}")
+
+    # --- NEW METHOD: Get all orders (for detailed view) ---
+    def get_all_order_data(self):
+        """
+        Gathers all orders (queued, active, delivering, and completed)
+        and returns a unified list for display in the UI.
+        """
+        all_orders = []
+        
+        # 1. Queued Orders (in self.Orders)
+        for order in self.Orders:
+            all_orders.append({
+                'type': 'ACTIVE',
+                'order_id': order['order_id'],
+                'customer_id': order['customer_id'],
+                'state': 'QUEUED',
+                'items_total': len(order['items']),
+                'items_ready': 0,
+                'is_current': False
+            })
+            
+        # 2. Currently Processing Order (in self.current_order)
+        if self.current_order:
+            order_id = self.current_order['order_id']
+            # Calculate items ready (from items_to_package)
+            ready_count = sum(1 for item in self.items_to_package.get(order_id, {}).values() if item['ready'])
+            
+            all_orders.append({
+                'type': 'ACTIVE',
+                'order_id': order_id,
+                'customer_id': self.current_order['customer_id'],
+                'state': self.state.value, # PREPARING, COOKING, BAKING, PACKAGING
+                'items_total': len(self.current_order['items']),
+                'items_ready': ready_count,
+                'is_current': True,
+            })
+
+        # 3. Order out for delivery (in self.delivery_in_progress_order)
+        if self.delivery_in_progress_order:
+             all_orders.append({
+                'type': 'ACTIVE',
+                'order_id': self.delivery_in_progress_order['order_id'],
+                'customer_id': self.delivery_in_progress_order['customer_id'],
+                'state': 'DELIVERING',
+                'items_total': len(self.delivery_in_progress_order['items']),
+                'items_ready': len(self.delivery_in_progress_order['items']), 
+                'is_current': False
+            })
+
+        # 4. Completed Orders (in self.completed_orders)
+        for order in self.completed_orders:
+            all_orders.append({
+                'type': 'COMPLETED',
+                'order_id': order['order_id'],
+                'customer_id': order['customer_id'],
+                'state': order.get('final_status', 'DELIVERED'),
+                'items_total': len(order['items']),
+                'items_ready': len(order['items']),
+                'is_current': False,
+                'completion_time': order.get('completion_time', 'N/A')
+            })
+            
+        return all_orders

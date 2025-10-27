@@ -1,20 +1,23 @@
-# SystemUI_AI.py
+# UI_AI.py
 
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, Canvas, Scrollbar, Frame
 import random
 from enum import Enum
 import threading
-import queue # For potential future cross-thread communication
+import queue 
+from City_AI import houseCoords 
+import time
 
-# Define SystemMode (kept here for consolidation)
+# Define SystemMode 
 class SystemMode(Enum):
     """Defines the current operating mode of the system."""
     SIMULATION = 1
     MANUAL_ORDERING = 2
 
 # =========================================================================
-# NEW CLASS: TkinterThread (The core fix for the GIL error)
+# NEW CLASS: TkinterThread 
+# ... (TkinterThread remains the same)
 # =========================================================================
 class TkinterThread(threading.Thread):
     """
@@ -22,7 +25,7 @@ class TkinterThread(threading.Thread):
     to prevent GIL conflicts with the Pygame thread.
     """
     def __init__(self, system_reference):
-        super().__init__(daemon=True) # Daemon ensures the thread closes when the main program exits
+        super().__init__(daemon=True) 
         self.system = system_reference
         self.root = None
         self.manual_ui = None
@@ -32,529 +35,660 @@ class TkinterThread(threading.Thread):
     def run(self):
         """Called when the thread starts."""
         self.root = tk.Tk()
-        self.root.withdraw() # Hidden main Tkinter root
+        self.root.withdraw() 
         
-        # Instantiate UIs within the Tkinter thread context
         self.manual_ui = ManualOrderUI(self.system)
         self.status_ui = OrderStatusUI(self.system, self.root)
         
-        self.manual_ui.setup_ui_dependencies() # Final setup after system is ready
+        self.manual_ui.setup_ui_dependencies() 
         
         self._is_running = True
         
-        # Start the persistent status window immediately
-        self.status_ui.start_ui() 
+        self.root.title("System UI & Controls")
         
-        # Start the Tkinter main loop
-        self.root.mainloop() 
-        self._is_running = False
-        print("[TkinterThread] Main loop terminated.")
+        # Start the Tkinter event loop
+        try:
+            self.root.mainloop()
+        except Exception as e:
+            # Handle the case where the main loop is exited unexpectedly
+            print(f"[Tkinter Thread] Main loop stopped: {e}")
+        finally:
+            self.stop()
 
-    def schedule_status_update(self, order_statuses):
-        """
-        Schedules a status update to run safely on the Tkinter thread.
-        This replaces the unsafe self.root.update() calls from the Pygame thread.
-        """
+
+    def schedule_status_update(self, order_statuses, force_all_active=False):
+        """Schedules a status update to run safely on the Tkinter thread."""
         if self._is_running and self.root and self.status_ui.root:
-            # Use root.after to schedule the call on the Tkinter thread
-            self.root.after(0, lambda: self.status_ui.update_status(order_statuses))
-            
-    def schedule_manual_ui_toggle(self, is_manual_mode):
-        """
-        Schedules the manual UI visibility toggle on the Tkinter thread.
-        """
-        if self._is_running and self.root:
-            if is_manual_mode:
-                 self.root.after(0, self.manual_ui.start_ui)
-            else:
-                 self.root.after(0, self.manual_ui.close_ui)
+            self.root.after(0, lambda: self.status_ui.update_status(order_statuses, force_all_active))
 
+    def schedule_manual_ui_toggle(self, is_manual_mode):
+        """Schedules the toggling of the manual UI window visibility."""
+        if self._is_running and self.root and self.manual_ui.root:
+            if is_manual_mode:
+                self.root.after(0, self.manual_ui.root.deiconify)
+            else:
+                self.root.after(0, self.manual_ui.root.withdraw)
+                
+    def schedule_show_restaurant_details(self, rest_name, order_data_list):
+        """Schedules the display of single restaurant details on the Tkinter thread."""
+        if self._is_running and self.root and self.status_ui.root:
+            self.root.after(0, lambda: self.status_ui.show_restaurant_details(rest_name, order_data_list))
+    
     def stop(self):
-        """Stops the Tkinter main loop."""
-        if self._is_running and self.root:
+        """Stops the Tkinter event loop gracefully."""
+        self._is_running = False
+        if self.root:
             self.root.quit()
 
-
 # =========================================================================
-# OrderStatusUI (Modified to run in the Toplevel)
+# OrderStatusUI (Collapsible Accordion View)
 # =========================================================================
 class OrderStatusUI:
     def __init__(self, system_reference, main_tk_root):
         self.system = system_reference
         self.root = None
-        self.status_text_area = None
-        self.main_tk_root = main_tk_root # Reference to the Tkinter root
+        self.main_tk_root = main_tk_root
+        self.expansion_states = {} 
+        self.content_frame = None 
+        self.canvas = None
+        self.current_view_mode = 'ALL_ACTIVE' 
+        self.detailed_rest_name = None
+        # --- NEW MEMBER for flicker fix ---
+        self.last_active_orders_hash = None
+        # ----------------------------------
+        
+        self.start_ui()
 
     def start_ui(self):
-        if self.root:
-            self.root.destroy()
-
+        # ... (start_ui method remains the same) ...
+        """Setup the main status window."""
         self.root = tk.Toplevel(self.main_tk_root)
-        self.root.title("Kitchen Order Status")
-        # Ensure geometry is set within the thread
-        self.root.geometry("400x500+10+10") 
-        self.root.configure(bg='#f0f0f0')
+        self.root.title("Order Status & System View")
+        self.root.protocol("WM_DELETE_WINDOW", self.close_ui) 
+        self.root.geometry("450x700")
+        self.root.withdraw() # Start hidden
         
-        # Prevent manual closing from breaking the main loop
-        self.root.protocol("WM_DELETE_WINDOW", lambda: self.root.withdraw())
-        # ... (rest of the setup is the same)
-        title_label = tk.Label(self.root, text="Current Orders", font=("Arial", 16, "bold"), bg='#f0f0f0', fg='#333333')
-        title_label.pack(pady=10)
-
-        self.status_text_area = scrolledtext.ScrolledText(
-            self.root,
-            wrap=tk.WORD,
-            width=45,
-            height=25,
-            font=("Courier", 10),
-            bg='white',
-            fg='black'
-        )
-        self.status_text_area.pack(padx=10, pady=5, fill='both', expand=True)
-        self.status_text_area.insert(tk.END, "Awaiting status updates...")
-        self.status_text_area.config(state=tk.DISABLED)
-
-        self.root.lift()
+        # Canvas setup for scrollability
+        self.canvas = Canvas(self.root, borderwidth=0, background="#F0F0F0")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        
+        scrollbar = Scrollbar(self.root, orient="vertical", command=self.canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Frame to hold the actual content inside the canvas
+        self.content_frame = Frame(self.canvas, background="#F0F0F0")
+        self.canvas.create_window((0, 0), window=self.content_frame, anchor="nw", 
+                                  width=450 - scrollbar.winfo_reqwidth())
+        
+        self.content_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion = self.canvas.bbox("all")))
+        
+        # Draw initial content
+        self.update_status([])
         self.root.deiconify()
+        self.current_view_mode = 'ALL_ACTIVE'
 
-    def update_status(self, orders_data):
-        """Refreshes the displayed order data. Called safely via root.after()."""
-        if self.root and self.status_text_area and self.root.winfo_exists():
-            try:
-                self.status_text_area.config(state=tk.NORMAL)
-                self.status_text_area.delete(1.0, tk.END)
 
-                if not orders_data:
-                    self.status_text_area.insert(tk.END, "No active orders in the kitchen queue.")
-                else:
-                    output = ""
-                    for order in orders_data:
-                        order_id = order.get('order_id', 'N/A')
-                        state = order.get('state', 'Unknown')
-                        items_total = order.get('items_total', 0)
-                        items_ready = order.get('items_ready', 0)
-                        
-                        output += f"Order ID: {order_id}\n"
-                        output += f"  Status: {state}\n"
-                        output += f"  Items: {items_ready}/{items_total} Ready\n"
-                        output += "--------------------------------------\n"
-                    
-                    self.status_text_area.insert(tk.END, output)
-
-                self.status_text_area.config(state=tk.DISABLED)
-            except tk.TclError:
-                 self.root = None
+    def toggle_orders_view(self, rest_name, header_button, order_frame_reference):
+        """Toggle the expansion state of a restaurant's order list in the ALL_ACTIVE view."""
+        
+        is_expanded = self.expansion_states.get(rest_name, False)
+        
+        if is_expanded:
+            order_frame_reference.pack_forget()
+            header_button.config(text=header_button.cget("text").replace("▼", "►"))
+        else:
+            order_frame_reference.pack(fill='x', padx=0, pady=(0, 0))
+            header_button.config(text=header_button.cget("text").replace("►", "▼"))
             
-    def close_ui(self):
-        if self.root:
-            self.root.destroy()
-            self.root = None
+        self.expansion_states[rest_name] = not is_expanded
+        
+        self.content_frame.update_idletasks() 
+        self.canvas.config(scrollregion=self.canvas.bbox("all"))
 
-# =========================================================================
-# ManualOrderUI (Modified to run in the Toplevel)
-# =========================================================================
+    # ... (show_restaurant_details and _create_order_section methods remain the same) ...
+    def show_restaurant_details(self, rest_name, all_orders):
+        """Displays all orders (active and completed) for a single restaurant."""
+        if not self.root or not self.content_frame or not self.root.winfo_exists():
+            return
+            
+        self.current_view_mode = 'SINGLE_REST'
+        self.detailed_rest_name = rest_name
+        self.expansion_states = {} # Reset expansion for this new view
+
+        # 1. Clear existing content
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+        # 2. Header
+        header_frame = tk.Frame(self.content_frame, bg='#333333', padx=10, pady=10)
+        header_frame.pack(fill='x', padx=5, pady=5)
+        
+        tk.Label(header_frame, text=f"{rest_name} - All Orders & History", 
+                 font=("Arial", 14, "bold"), fg='white', bg='#333333').pack(fill='x')
+        
+        # Separating Active and Completed Orders
+        active_orders = [o for o in all_orders if o['type'] == 'ACTIVE']
+        completed_orders = [o for o in all_orders if o['type'] == 'COMPLETED']
+
+        # 3. Active Orders Section
+        self._create_order_section(
+            "Active Orders", 
+            active_orders, 
+            '#FFD700', 
+            self.content_frame
+        )
+
+        # 4. Completed Orders Section (History)
+        self._create_order_section(
+            f"Order History ({len(completed_orders)} Completed)", 
+            completed_orders, 
+            '#90EE90', 
+            self.content_frame
+        )
+        
+        # 5. Back Button
+        # Calls the Main System method which will trigger a schedule_status_update with force_all_active=True
+        back_button = tk.Button(self.content_frame, text="<< Back to All Active Orders",
+                                command=self.system.schedule_status_update_all)
+        back_button.pack(pady=10)
+
+
+        # 6. Final canvas update for scrolling
+        self.content_frame.update_idletasks() 
+        self.canvas.config(scrollregion=self.canvas.bbox("all"))
+
+    def _create_order_section(self, title, orders, color, parent_frame):
+        """Helper to create collapsible or non-collapsible sections for the single restaurant view."""
+        
+        section_frame = tk.Frame(parent_frame, bg='#F0F0F0', padx=0, pady=0)
+        section_frame.pack(fill='x', padx=5, pady=(5, 0))
+        
+        is_expanded = self.expansion_states.get(title, True)
+        button_indicator = "▼" if is_expanded else "►"
+        
+        # 1. Create the button object without the command argument
+        header_button = tk.Button(
+            section_frame,
+            text=f"{button_indicator} {title}",
+            font=("Arial", 11, "bold"),
+            bg=color, fg="black",
+            activebackground="#D3D3D3",
+            anchor='w',
+            relief='flat',
+            padx=5
+        )
+        # 2. Assign the command, capturing the necessary arguments
+        header_button.config(
+            command=lambda name=title, section=section_frame: self.toggle_single_section_view(name, section)
+        )
+        header_button.pack(fill='x')
+        
+        details_frame = tk.Frame(section_frame, bg='#FFFFFF', bd=1, relief=tk.SOLID)
+        if is_expanded:
+            details_frame.pack(fill='x', padx=0, pady=(0, 0)) 
+        self.expansion_states[title] = is_expanded
+
+        if not orders:
+            tk.Label(details_frame, text="No orders in this category.", bg='white', padx=10).pack(fill='x', pady=5)
+            
+        for i, order in enumerate(orders):
+            # Format display line
+            status_line = f"ID: {order['order_id']} | Cust: {order['customer_id']} | Status: {order['state']}"
+            
+            if order.get('type') == 'ACTIVE':
+                status_line += f" | Items: {order.get('items_ready', 0)}/{order.get('items_total', 0)} Ready"
+            
+            elif order.get('type') == 'COMPLETED':
+                try:
+                    ts = order.get('completion_time')
+                    if ts and isinstance(ts, (int, float)):
+                        time_str = time.strftime('%H:%M:%S', time.localtime(ts))
+                        status_line += f" | Completed at: {time_str}"
+                except:
+                    pass
+
+            
+            # Order Label
+            order_label = tk.Label(
+                details_frame, 
+                text=status_line, 
+                font=("Courier", 10, "bold" if order.get('is_current') else "normal"), 
+                bg='white', 
+                fg='black', 
+                anchor='w', 
+                padx=10, 
+                pady=5
+            )
+            order_label.pack(fill='x')
+            
+            if i < len(orders) - 1:
+                tk.Frame(details_frame, height=1, bg='#CCCCCC').pack(fill='x', padx=10) 
+
+    def toggle_single_section_view(self, title, section_frame):
+        # ... (toggle_single_section_view method remains the same) ...
+        """Specialized toggle for sections within the single restaurant view."""
+        
+        # Get the header button and details frame based on pack order
+        header_button = section_frame.winfo_children()[0]
+        details_frame = section_frame.winfo_children()[1]
+        
+        is_expanded = self.expansion_states.get(title, True)
+
+        if is_expanded:
+            details_frame.pack_forget()
+            header_button.config(text=header_button.cget("text").replace("▼", "►"))
+        else:
+            details_frame.pack(fill='x', padx=0, pady=(0, 0))
+            header_button.config(text=header_button.cget("text").replace("►", "▼"))
+            
+        self.expansion_states[title] = not is_expanded
+        
+        self.content_frame.update_idletasks() 
+        self.canvas.config(scrollregion=self.canvas.bbox("all"))
+
+    # --- MODIFIED METHOD: Includes caching and comparison ---
+    def update_status(self, orders_data, force_all_active=False):
+        """Updates the default ALL_ACTIVE view."""
+        if not self.root or not self.content_frame or not self.root.winfo_exists():
+            return
+            
+        # Only update if we are in the default mode or explicitly told to switch back
+        if self.current_view_mode == 'SINGLE_REST' and not force_all_active:
+            return
+
+        self.current_view_mode = 'ALL_ACTIVE'
+        
+        # --- FIX: Caching and Comparison ---
+        # 1. Create a hash of the current order data for comparison
+        # Sort the data by order_id and state to ensure the hash is consistent
+        # We only care about the elements that determine the layout (not the items_ready count, which updates frequently)
+        
+        # Extract the elements that define the structure/state for hashing:
+        hashable_data = []
+        for order in orders_data:
+             # Tuple: (restaurant_name, order_id, state)
+             hashable_data.append((order.get('restaurant_name'), order.get('order_id'), order.get('state')))
+             
+        hashable_data.sort()
+        
+        current_data_hash = hash(tuple(hashable_data))
+        
+        # 2. Check if the layout/state has changed since the last update
+        if current_data_hash == self.last_active_orders_hash and not force_all_active:
+             # Data structure and high-level status haven't changed, skip redraw
+             return 
+             
+        self.last_active_orders_hash = current_data_hash
+        # --- END FIX ---
+        
+        # 3. Clear existing content (only if data/view has changed)
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+            
+        # Title for All Active View
+        tk.Label(self.content_frame, text="Active Orders (System-Wide)", 
+                 font=("Arial", 14, "bold"), bg='#F0F0F0').pack(fill='x', padx=5, pady=5)
+
+
+        if not orders_data:
+            tk.Label(self.content_frame, text="No active orders in the kitchen queue.", bg='white', font=("Arial", 10)).pack(pady=20)
+            self.content_frame.update_idletasks() 
+            self.canvas.config(scrollregion=self.canvas.bbox("all"))
+            return
+
+        # 4. Group orders by restaurant
+        restaurants_orders = {}
+        for order in orders_data:
+            rest_name = order.get('restaurant_name', 'Unknown Restaurant') 
+            if rest_name not in restaurants_orders:
+                restaurants_orders[rest_name] = []
+            restaurants_orders[rest_name].append(order)
+
+        # 5. Create a collapsible section for each restaurant
+        for rest_name, orders in restaurants_orders.items():
+            order_count = len(orders)
+            # Use the stored expansion state (or default to False)
+            is_expanded = self.expansion_states.get(rest_name, False)
+            
+            rest_frame = tk.Frame(self.content_frame, bg='#E0E0E0', padx=0, pady=0)
+            rest_frame.pack(fill='x', padx=5, pady=(5, 0))
+            
+            order_details_frame = tk.Frame(rest_frame, bg='#FFFFFF', bd=1, relief=tk.SOLID)
+            
+            button_indicator = "▼" if is_expanded else "►"
+            button_text = f"{button_indicator} {rest_name} ({order_count} Orders)"
+            
+            # 1. Create the button object 
+            header_button = tk.Button(
+                rest_frame,
+                text=button_text,
+                font=("Arial", 11, "bold"),
+                bg="#A9A9A9", fg="white",
+                activebackground="#909090",
+                anchor='w',
+                relief='flat',
+                padx=5,
+            )
+            
+            # 2. Assign the command (Fixing the previous UnboundLocalError)
+            header_button.config(
+                command=lambda name=rest_name, btn=header_button, details=order_details_frame: self.toggle_orders_view(name, btn, details)
+            )
+            
+            header_button.pack(fill='x')
+            
+            if is_expanded:
+                order_details_frame.pack(fill='x', padx=0, pady=(0, 0)) 
+            
+            # Populate the order details frame
+            for i, order in enumerate(orders):
+                order_id = order.get('order_id', 'N/A')
+                state = order.get('state', 'Unknown')
+                items_total = order.get('items_total', 0)
+                items_ready = order.get('items_ready', 0)
+                
+                status_text = f"ID: {order_id} | Status: {state} | Items: {items_ready}/{items_total} Ready"
+                
+                order_label = tk.Label(
+                    order_details_frame, 
+                    text=status_text, 
+                    font=("Courier", 10), 
+                    bg='white', 
+                    fg='black', 
+                    anchor='w', 
+                    padx=10, 
+                    pady=2
+                )
+                order_label.pack(fill='x')
+                
+                if i < order_count - 1:
+                    tk.Frame(order_details_frame, height=1, bg='#CCCCCC').pack(fill='x', padx=10) 
+            
+        # 6. Final canvas update for scrolling
+        self.content_frame.update_idletasks() 
+        self.canvas.config(scrollregion=self.canvas.bbox("all"))
+
+    def close_ui(self):
+        """Called when the user tries to close the status window."""
+        self.root.withdraw() # Simply hide it, don't destroy it (could be reopened)
+
+# ... (ManualOrderUI class remains the same) ...
 class ManualOrderUI:
-    # ... (all existing __init__ and utility methods remain the same)
     def __init__(self, system_reference):
         self.system = system_reference
         self.root = None
-        self.ingredient_states = {}
-        self.selected_size = None
-        self.size_buttons = {}
-        self.basket = []
-        self.selected_pasta_type = None
-        self.selected_sauce = None
-        self.pasta_ingredient_states = {}
-        self.pasta_type_buttons = {}
-        self.sauce_buttons = {}
-        self.pizza_id_counter = 10000
-        self.pasta_id_counter = 20000
-        self.customer_address = None 
-        self.customer_id = 9999
-        self.main_tk_root = None # Will be set by the TkinterThread
-
+        self.selected_items = []
+        self.pizza_id_counter = 5000
+        self.pasta_id_counter = 6000
+        self.order_id_counter = 9000
+        
+        # Customer Mock Data
+        self.customer_id = "MANUAL_CUST_1"
+        # Set a default coordinate (e.g., house 1 from houseCoords)
+        self.customer_address = houseCoords[0]
+        
     def setup_ui_dependencies(self):
-        """Called by the TkinterThread AFTER the city is initialized."""
-        if self.system.city and self.system.city.houseCoords:
-            self.customer_address = (self.system.city.houseCoords[0][0], self.system.city.houseCoords[0][1])
-        else:
-            self.customer_address = (100, 100) 
-            print("[ManualUI] Warning: Could not find city coordinates; using fallback address (100, 100).")
+        """Called by the thread after the main root is created."""
+        self._initialize_main_window()
+        self._setup_content_frames()
+        self.root.withdraw() # Start hidden
 
-    def start_ui(self):
-        # Retrieve the Tkinter root from the system's TkinterThread object
-        self.main_tk_root = self.system.tkinter_thread.root 
-        
-        if self.root:
-             self.root.destroy()
-
-        self.root = tk.Toplevel(self.main_tk_root)
+    def _initialize_main_window(self):
+        self.root = tk.Toplevel()
         self.root.title("Manual Food Ordering")
-        self.root.geometry("500x800")
+        self.root.geometry("600x800")
+        # Ensure it doesn't close the whole app, but just hides itself
+        self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw) 
         self.root.configure(bg='white')
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-
-        self.create_main_screen()
-
-        self.root.lift()
-        self.root.attributes('-topmost', True)
-        self.root.after_idle(self.root.attributes, '-topmost', False)
         
-    def close_ui(self):
-        if self.root:
-            self.root.destroy()
-            self.root = None
-            
-    # ... (all other methods like on_closing, toggle_ingredient, create_main_screen, etc., remain the same)
-    def on_closing(self):
-        # Must schedule the mode switch back to Pygame thread
-        if messagebox.askokcancel("Quit", "Are you sure you want to exit manual ordering?"):
-            self.system.switch_mode(SystemMode.SIMULATION)
-            if self.root:
-                self.root.destroy()
-            self.root = None
-            
-    # --- Other methods for item selection, creation, and sending order are unchanged ---
-    def toggle_ingredient(self, ingredient, button):
-        if not self.root or not self.root.winfo_exists(): return
-        self.ingredient_states[ingredient] = not self.ingredient_states.get(ingredient, False)
-        if self.ingredient_states[ingredient]:
-            button.config(bg="#4CAF50", relief="sunken")
-        else:
-            button.config(bg="#f0f0f0", relief="raised")
-            
-    def toggle_pasta_ingredient(self, ingredient, button):
-        if not self.root or not self.root.winfo_exists(): return
-        self.pasta_ingredient_states[ingredient] = not self.pasta_ingredient_states.get(ingredient, False)
-        if self.pasta_ingredient_states[ingredient]:
-            button.config(bg="#4CAF50", relief="sunken")
-        else:
-            button.config(bg="#f0f0f0", relief="raised")
+    def _setup_content_frames(self):
+        # Header
+        tk.Label(self.root, text="Place a Custom Order", font=("Arial", 16, "bold"), fg="white", bg="#FF5722", pady=10).pack(fill='x')
 
-    def select_size(self, size, button):
-        if not self.root or not self.root.winfo_exists(): return
-        if self.selected_size and self.selected_size in self.size_buttons:
-            self.size_buttons[self.selected_size].config(bg="#f0f0f0", relief="raised")
-        self.selected_size = size
-        button.config(bg="#2196F3", relief="sunken")
-
-    def select_pasta_type(self, pasta_type, button):
-        if not self.root or not self.root.winfo_exists(): return
-        if self.selected_pasta_type and self.selected_pasta_type in self.pasta_type_buttons:
-            self.pasta_type_buttons[self.selected_pasta_type].config(bg="#f0f0f0", relief="raised")
-        self.selected_pasta_type = pasta_type
-        button.config(bg="#2196F3", relief="sunken")
-
-    def select_sauce(self, sauce, button):
-        if not self.root or not self.root.winfo_exists(): return
-        if self.selected_sauce and self.selected_sauce in self.sauce_buttons:
-            self.sauce_buttons[self.selected_sauce].config(bg="#f0f0f0", relief="raised")
-        self.selected_sauce = sauce
-        button.config(bg="#2196F3", relief="sunken")
+        # Menu Selection
+        menu_frame = tk.Frame(self.root, bg='white', padx=20, pady=10)
+        menu_frame.pack(fill='x')
         
-    def add_to_basket(self, item_type):
-        if not self.root or not self.root.winfo_exists(): return
-        selected_ingredients = []
-        order = {}
+        tk.Label(menu_frame, text="Menu Items:", font=("Arial", 14, "bold"), bg='white', anchor='w').pack(fill='x', pady=5)
+        
+        # Pizza Button
+        tk.Button(menu_frame, text="Add Pizza 🍕", font=("Arial", 12), bg="#4CAF50", fg="white", 
+                  command=lambda: self._show_pizza_dialog()).pack(side='left', padx=10, pady=5)
+        # Pasta Button
+        tk.Button(menu_frame, text="Add Pasta 🍝", font=("Arial", 12), bg="#2196F3", fg="white", 
+                  command=lambda: self._show_pasta_dialog()).pack(side='left', padx=10, pady=5)
+        
+        # Order Basket Display
+        self.basket_frame = tk.Frame(self.root, bg='#F5F5F5', padx=10, pady=10, bd=2, relief=tk.GROOVE)
+        self.basket_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        tk.Label(self.basket_frame, text="Order Basket:", font=("Arial", 14, "bold"), bg='#F5F5F5', anchor='w').pack(fill='x', pady=5)
+        
+        # Scrollable area for items
+        self.basket_canvas = Canvas(self.basket_frame, bg='#F5F5F5', borderwidth=0)
+        self.basket_canvas.pack(side="left", fill="both", expand=True)
+        
+        basket_scrollbar = Scrollbar(self.basket_frame, orient="vertical", command=self.basket_canvas.yview)
+        basket_scrollbar.pack(side="right", fill="y")
+        
+        self.basket_canvas.configure(yscrollcommand=basket_scrollbar.set)
+        
+        self.basket_content_frame = Frame(self.basket_canvas, bg='#F5F5F5')
+        self.basket_canvas.create_window((0, 0), window=self.basket_content_frame, anchor="nw", width=550)
+        
+        self.basket_content_frame.bind("<Configure>", lambda e: self.basket_canvas.configure(scrollregion = self.basket_canvas.bbox("all")))
 
-        if item_type == 'pizza':
-            if not self.selected_size:
-                messagebox.showwarning("No Size Selected", "Please select a pizza size!")
-                return
-            selected_ingredients = [ing for ing, sel in self.ingredient_states.items() if sel]
-            pizza_id = self.pizza_id_counter
+        # Action Buttons
+        self._update_basket_display()
+        
+    def _show_pizza_dialog(self):
+        # Constants from Customer_AI logic
+        sizes = ['small', 'medium', 'large', 'family']
+        all_toppings = ['cheese', 'mushrooms', 'onions', 'peppers', 'sausage', 'bacon', 'spinach', 'extra cheese']
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Customize Pizza")
+        dialog.geometry("300x400")
+        dialog.transient(self.root) 
+        dialog.grab_set() 
+        
+        selected_size = tk.StringVar(dialog, sizes[1]) # Default to medium
+        selected_toppings = {topping: tk.BooleanVar(dialog) for topping in all_toppings}
+
+        tk.Label(dialog, text="Size:").pack(pady=5)
+        size_menu = tk.OptionMenu(dialog, selected_size, *sizes)
+        size_menu.pack()
+        
+        tk.Label(dialog, text="Toppings:").pack(pady=10)
+        
+        # Scrollable area for toppings
+        topping_canvas = Canvas(dialog)
+        topping_frame = Frame(topping_canvas)
+        v_scrollbar = Scrollbar(dialog, orient="vertical", command=topping_canvas.yview)
+        topping_canvas.configure(yscrollcommand=v_scrollbar.set)
+        
+        v_scrollbar.pack(side="right", fill="y")
+        topping_canvas.pack(fill="both", expand=True)
+        topping_canvas.create_window((0, 0), window=topping_frame, anchor="nw", width=250)
+
+        for topping, var in selected_toppings.items():
+            tk.Checkbutton(topping_frame, text=topping, variable=var).pack(anchor='w')
+
+        topping_frame.update_idletasks()
+        topping_canvas.config(scrollregion=topping_canvas.bbox("all"))
+
+        def add_pizza():
+            pizza_toppings = [t for t, v in selected_toppings.items() if v.get()]
+            
+            item = {
+                'type': 'Pizza',
+                'item_id': self.pizza_id_counter,
+                'size': selected_size.get(),
+                'ingredients': pizza_toppings
+            }
             self.pizza_id_counter += 1
-            order = {"id": pizza_id, "type": "Pizza", "size": self.selected_size, "ingredients": selected_ingredients}
+            self.selected_items.append(item)
+            self._update_basket_display()
+            dialog.destroy()
 
-        elif item_type == 'pasta':
-            if not self.selected_pasta_type or not self.selected_sauce:
-                messagebox.showwarning("Incomplete Selection", "Please select a pasta type and a sauce!")
-                return
-            selected_ingredients = [ing for ing, sel in self.pasta_ingredient_states.items() if sel]
-            pasta_id = self.pasta_id_counter
-            self.pasta_id_counter += 1
-            order = {"id": pasta_id, "type": "Pasta", "pasta_type": self.selected_pasta_type, "sauce": self.selected_sauce, "ingredients": selected_ingredients}
+        tk.Button(dialog, text="Add to Order", command=add_pizza).pack(pady=10)
+        self.root.wait_window(dialog)
 
-        self.basket.append(order)
-        self.create_main_screen()
 
-    def format_order_data(self):
-        formatted_orders = []
-        for item in self.basket:
-            if item['type'] == 'Pizza':
-                order_data = [item['id'], 'pizza', item['size'].lower()]
-                order_data.extend([ingredient.lower() for ingredient in item['ingredients']])
-                formatted_orders.append(order_data)
-            else:
-                order_data = [item['id'], 'pasta', item['pasta_type'].lower(), item['sauce'].lower()]
-                order_data.extend([ingredient.lower() for ingredient in item['ingredients']])
-                formatted_orders.append(order_data)
-        return formatted_orders
+    def _show_pasta_dialog(self):
+        # Constants from Customer_AI logic
+        pastas = ['spaghetti', 'penne', 'fettuccine', 'macaroni', 'gnocchi', 'tagliatelle']
+        sauces = ['tomato', 'alfredo', 'pesto', 'bolognese', 'arrabiata', 'carbonara']
+        all_toppings = ['chicken', 'mushrooms', 'onions', 'peppers', 'paprika', 'spinach', 'bacon', 'parmesan', 'basil']
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Customize Pasta")
+        dialog.geometry("300x450")
+        dialog.transient(self.root) 
+        dialog.grab_set() 
+        
+        selected_pasta = tk.StringVar(dialog, pastas[0]) 
+        selected_sauce = tk.StringVar(dialog, sauces[0]) 
+        selected_toppings = {topping: tk.BooleanVar(dialog) for topping in all_toppings}
 
-    def send_order(self):
-        if not self.root or not self.root.winfo_exists(): return
-        if not self.basket or not self.customer_address:
-            messagebox.showerror("Order Error", "System not fully initialized or basket is empty.")
-            return
+        tk.Label(dialog, text="Pasta Type:").pack(pady=5)
+        pasta_menu = tk.OptionMenu(dialog, selected_pasta, *pastas)
+        pasta_menu.pack()
+        
+        tk.Label(dialog, text="Sauce:").pack(pady=5)
+        sauce_menu = tk.OptionMenu(dialog, selected_sauce, *sauces)
+        sauce_menu.pack()
+        
+        tk.Label(dialog, text="Toppings:").pack(pady=10)
+        
+        # Scrollable area for toppings
+        topping_canvas = Canvas(dialog)
+        topping_frame = Frame(topping_canvas)
+        v_scrollbar = Scrollbar(dialog, orient="vertical", command=topping_canvas.yview)
+        topping_canvas.configure(yscrollcommand=v_scrollbar.set)
+        
+        v_scrollbar.pack(side="right", fill="y")
+        topping_canvas.pack(fill="both", expand=True)
+        topping_canvas.create_window((0, 0), window=topping_frame, anchor="nw", width=250)
 
-        formatted_orders = self.format_order_data()
-        order_id = random.randint(30000, 39999)
-
-        order_data = {
-            'order_id': order_id,
-            'customer_id': self.customer_id,
-            'customer_address': self.customer_address,
-            'items': formatted_orders,
-            'total_items': len(self.basket)
-        }
-
-        try:
-            self.system.submit_manual_order(order_data)
-            messagebox.showinfo("Order Sent", f"Order {order_id} submitted to the kitchen! The simulation will now process it.")
-            self.basket.clear()
-            self.create_main_screen()
-        except Exception as e:
-            messagebox.showerror("Order Error", f"Failed to submit order: {str(e)}")
-
-    def process_payment(self):
-        if not self.root or not self.root.winfo_exists(): return
-        if not self.basket:
-            messagebox.showwarning("Empty Basket", "Your basket is empty. Please add items before submitting.")
-            return
-
-        confirm = messagebox.askyesno(
-            "Confirm Order",
-            f"Ready to submit order to the kitchen?\n"
-            f"Total items: {len(self.basket)}\n\n"
-            f"Submit order now?"
-        )
-
-        if confirm:
-            self.send_order()
+        for topping, var in selected_toppings.items():
+            tk.Checkbutton(topping_frame, text=topping, variable=var).pack(anchor='w')
             
-    # --- Screen Navigation & Creation ---
-    def clear_screen(self):
-        if self.root:
-            for widget in self.root.winfo_children():
-                widget.destroy()
+        topping_frame.update_idletasks()
+        topping_canvas.config(scrollregion=topping_canvas.bbox("all"))
 
-    def order_pizza(self):
-        self.clear_screen()
-        self.create_pizza_screen()
+        def add_pasta():
+            pasta_toppings = [t for t, v in selected_toppings.items() if v.get()]
+            
+            item = {
+                'type': 'Pasta',
+                'item_id': self.pasta_id_counter,
+                'pasta_type': selected_pasta.get(),
+                'sauce': selected_sauce.get(),
+                'ingredients': pasta_toppings
+            }
+            self.pasta_id_counter += 1
+            self.selected_items.append(item)
+            self._update_basket_display()
+            dialog.destroy()
 
-    def order_pasta(self):
-        self.clear_screen()
-        self.create_pasta_screen()
+        tk.Button(dialog, text="Add to Order", command=add_pasta).pack(pady=10)
+        self.root.wait_window(dialog)
+        
+    def _remove_item(self, item_id_to_remove):
+        self.selected_items = [item for item in self.selected_items if item['item_id'] != item_id_to_remove]
+        self._update_basket_display()
 
-    def view_basket(self):
-        self.clear_screen()
-        self.create_basket_screen()
-
-    def create_main_screen(self):
-        if not self.root or not self.root.winfo_exists(): return
-        self.clear_screen()
-        self.ingredient_states = {}
-        self.selected_size = None
-        self.size_buttons = {}
-        self.selected_pasta_type = None
-        self.selected_sauce = None
-        self.pasta_ingredient_states = {}
-        self.pasta_type_buttons = {}
-        self.sauce_buttons = {}
-
-        title_label = tk.Label(self.root, text="Manual Food Ordering", font=("Arial", 20, "bold"), bg='white', fg='black')
-        title_label.pack(pady=30)
-
-        switch_button = tk.Button(
-            self.root,
-            text="Switch to Simulation",
-            font=("Arial", 10),
-            bg="#f44336",
-            fg="white",
-            width=20,
-            height=1,
-            command=self.on_closing
-        )
-        switch_button.pack(pady=5)
-
-        basket_count = len(self.basket)
-        basket_label = tk.Label(self.root, text=f"Items in basket: {basket_count}", font=("Arial", 12), bg='white', fg='black')
-        basket_label.pack(pady=10)
-
-        view_basket_button = tk.Button(
-            self.root,
-            text="View Basket",
-            font=("Arial", 12, "bold"),
-            bg="#9C27B0",
-            fg="white",
-            width=15,
-            height=2,
-            command=self.view_basket
-        )
-        view_basket_button.pack(pady=10)
-
-        subtitle_label = tk.Label(self.root, text="What would you like to order?", font=("Arial", 14), bg='white', fg='black')
-        subtitle_label.pack(pady=20)
-
-        pizza_button = tk.Button(
-            self.root,
-            text="Pizza",
-            font=("Arial", 16, "bold"),
-            bg="#ff6b6b",
-            fg="white",
-            width=20,
-            height=3,
-            command=self.order_pizza
-        )
-        pizza_button.pack(pady=15)
-
-        pasta_button = tk.Button(
-            self.root,
-            text="Pasta",
-            font=("Arial", 16, "bold"),
-            bg="#4ecdc4",
-            fg="white",
-            width=20,
-            height=3,
-            command=self.order_pasta
-        )
-        pasta_button.pack(pady=15)
-
-        tk.Frame(self.root, bg='white').pack(expand=True, fill='both')
-
-    def create_basket_screen(self):
-        if not self.root or not self.root.winfo_exists(): return
-        self.clear_screen()
-        title_label = tk.Label(self.root, text="Your Basket", font=("Arial", 20, "bold"), bg='white', fg='black')
-        title_label.pack(pady=20)
-
-        if not self.basket:
-            empty_label = tk.Label(self.root, text="Your basket is empty", font=("Arial", 14), bg='white', fg='black')
-            empty_label.pack(pady=50)
+    def _update_basket_display(self):
+        # Clear basket content frame
+        for widget in self.basket_content_frame.winfo_children():
+            widget.destroy()
+            
+        if not self.selected_items:
+            tk.Label(self.basket_content_frame, text="Your basket is empty. Add items to order.", bg='#F5F5F5', pady=20).pack()
         else:
-            basket_frame = tk.Frame(self.root, bg='white')
-            basket_frame.pack(pady=20, fill='both', expand=True)
+            for i, item in enumerate(self.selected_items):
+                item_type = item['type']
+                
+                if item_type == "Pizza":
+                    item_details = f"{item['size'].capitalize()} Pizza"
+                elif item_type == "Pasta":
+                    item_details = f"{item['pasta_type'].capitalize()} with {item['sauce'].capitalize()} Sauce"
+                
+                ingredients_text = ", ".join(item.get('ingredients', [])).capitalize()
+                
+                item_display = tk.Frame(self.basket_content_frame, bd=1, relief=tk.SOLID, padx=10, pady=5, bg='white')
+                item_display.pack(fill='x', padx=5, pady=5)
+                
+                # Item Description
+                desc_frame = tk.Frame(item_display, bg='white')
+                desc_frame.pack(fill='x')
+                
+                tk.Label(desc_frame, text=f"{i+1}. {item_details}", font=("Arial", 12, "bold"), bg='white', anchor='w').pack(side='left', fill='x', expand=True)
+                
+                # Remove Button
+                remove_button = tk.Button(desc_frame, text="X", fg="red", bg='white', relief='flat', 
+                                          command=lambda item_id=item['item_id']: self._remove_item(item_id))
+                remove_button.pack(side='right')
 
-            for i, item in enumerate(self.basket):
-                item_frame = tk.Frame(basket_frame, bg='white', relief='solid', bd=1)
-                item_frame.pack(fill='x', padx=20, pady=5)
+                if ingredients_text:
+                    tk.Label(item_display, text=f"  Toppings: {ingredients_text}", font=("Arial", 10), bg='white', anchor='w').pack(fill='x')
 
-                if item['type'] == 'Pizza':
-                    ingredients_text = ", ".join(item['ingredients']) if item['ingredients'] else "No extra ingredients"
-                    item_text = f"Item {i + 1}: {item['type']} (ID: {item['id']}) - {item['size']}\nIngredients: {ingredients_text}"
-                else:
-                    ingredients_text = ", ".join(item['ingredients']) if item['ingredients'] else "No extra ingredients"
-                    item_text = f"Item {i + 1}: {item['type']} (ID: {item['id']})\nPasta: {item['pasta_type']}\nSauce: {item['sauce']}\nIngredients: {ingredients_text}"
+        # Update scrollable region
+        self.basket_content_frame.update_idletasks()
+        self.basket_canvas.config(scrollregion=self.basket_canvas.bbox("all"))
 
-                item_label = tk.Label(item_frame, text=item_text, font=("Arial", 10), bg='white', fg='black', justify='left', anchor='w')
-                item_label.pack(padx=10, pady=10, fill='x')
+        # Re-draw submit button area
+        for widget in self.root.winfo_children():
+            # Find the action frame (the one with the submit button)
+            if widget.winfo_class() == 'Frame':
+                # Check for the frame that contains the submit button (heuristic based on previous layout)
+                children = widget.winfo_children()
+                if children and children[0].winfo_class() == 'Button' and children[0].cget('text') == 'Submit Order':
+                     widget.destroy()
+                     break
 
-        buttons_frame = tk.Frame(self.root, bg='white')
-        buttons_frame.pack(pady=20)
-
-        pay_button = tk.Button(buttons_frame, text="Submit Order to Kitchen", font=("Arial", 12, "bold"), bg="#4CAF50", fg="white", width=20, height=2, command=self.process_payment)
-        pay_button.grid(row=0, column=0, padx=10, pady=5)
-
-        back_button = tk.Button(buttons_frame, text="Back to Main Menu", font=("Arial", 12), bg="#cccccc", fg="black", width=15, height=2, command=self.create_main_screen)
-        back_button.grid(row=0, column=1, padx=10, pady=5)
-
-
-    def create_pasta_screen(self):
-        if not self.root or not self.root.winfo_exists(): return
-        self.clear_screen()
-        main_frame = tk.Frame(self.root, bg='white')
-        main_frame.pack(fill='both', expand=True)
-
-        title_label = tk.Label(main_frame, text="Customize Your Pasta", font=("Arial", 18, "bold"), bg='white', fg='black')
-        title_label.pack(pady=15)
-
-        pasta_type_label = tk.Label(main_frame, text="Select Pasta Type (choose 1):", font=("Arial", 12, "bold"), bg='white', fg='black')
-        pasta_type_label.pack(pady=8)
-        pasta_type_frame = tk.Frame(main_frame, bg='white')
-        pasta_type_frame.pack(pady=5)
-        pasta_types = ["Spaghetti", "Gnocchi", "Macaroni", "Tagliatelle", "Penne"]
-        self.pasta_type_buttons = {}
-
-        for i, pasta_type in enumerate(pasta_types):
-            row = i // 3; col = i % 3
-            pasta_type_button = tk.Button(pasta_type_frame, text=pasta_type, font=("Arial", 10), bg="#f0f0f0", fg="black", width=12, height=2, relief="raised")
-            pasta_type_button.config(command=lambda pt=pasta_type, btn=pasta_type_button: self.select_pasta_type(pt, btn))
-            pasta_type_button.grid(row=row, column=col, padx=3, pady=3)
-            self.pasta_type_buttons[pasta_type] = pasta_type_button
-
-        sauce_label = tk.Label(main_frame, text="Select Sauce (choose 1):", font=("Arial", 12, "bold"), bg='white', fg='black')
-        sauce_label.pack(pady=15)
-        sauce_frame = tk.Frame(main_frame, bg='white')
-        sauce_frame.pack(pady=5)
-        sauces = ["Pesto", "Tomato", "Bolognese", "Alfredo", "Arrabiata"]
-        self.sauce_buttons = {}
-
-        for i, sauce in enumerate(sauces):
-            row = i // 3; col = i % 3
-            sauce_button = tk.Button(sauce_frame, text=sauce, font=("Arial", 10), bg="#f0f0f0", fg="black", width=12, height=2, relief="raised")
-            sauce_button.config(command=lambda s=sauce, btn=sauce_button: self.select_sauce(s, btn))
-            sauce_button.grid(row=row, column=col, padx=3, pady=3)
-            self.sauce_buttons[sauce] = sauce_button
-
-        ingredient_label = tk.Label(main_frame, text="Select Toppings (optional):", font=("Arial", 12, "bold"), bg='white', fg='black')
-        ingredient_label.pack(pady=15)
-        pasta_ingredients = ["Chicken", "Paprika", "Mushroom", "Pepper", "Onion"]
-        ingredient_frame = tk.Frame(main_frame, bg='white')
-        ingredient_frame.pack(pady=5)
-
-        for i, ingredient in enumerate(pasta_ingredients):
-            row = i // 3; col = i % 3
-            ingredient_button = tk.Button(ingredient_frame, text=ingredient, font=("Arial", 10), bg="#f0f0f0", fg="black", width=12, height=2, relief="raised")
-            ingredient_button.config(command=lambda ing=ingredient, btn=ingredient_button: self.toggle_pasta_ingredient(ing, btn))
-            ingredient_button.grid(row=row, column=col, padx=3, pady=3)
-
-        spacer = tk.Frame(main_frame, bg='white', height=10)
-        spacer.pack(fill='x', expand=True)
-
-        action_frame = tk.Frame(main_frame, bg='white')
-        action_frame.pack(pady=15)
-
-        add_to_basket_button = tk.Button(action_frame, text="Add to Basket", font=("Arial", 12, "bold"), bg="#FF9800", fg="white", width=15, height=2, command=lambda: self.add_to_basket('pasta'))
-        add_to_basket_button.grid(row=0, column=0, padx=8, pady=5)
-        back_button = tk.Button(action_frame, text="Back to Main Menu", font=("Arial", 12), bg="#cccccc", fg="black", width=15, height=2, command=self.create_main_screen)
-        back_button.grid(row=0, column=1, padx=8, pady=5)
-
-
-    def create_pizza_screen(self):
-        if not self.root or not self.root.winfo_exists(): return
-        self.clear_screen()
-        title_label = tk.Label(self.root, text="Customize Your Pizza", font=("Arial", 20, "bold"), bg='white', fg='black')
-        title_label.pack(pady=20)
-
-        size_label = tk.Label(self.root, text="Select Size:", font=("Arial", 14, "bold"), bg='white', fg='black')
-        size_label.pack(pady=10)
-        size_frame = tk.Frame(self.root, bg='white')
-        size_frame.pack(pady=10)
-        sizes = ["Small", "Medium", "Large"]
-        self.size_buttons = {}
-
-        for i, size in enumerate(sizes):
-            size_button = tk.Button(size_frame, text=size, font=("Arial", 12), bg="#f0f0f0", fg="black", width=12, height=2, relief="raised")
-            size_button.config(command=lambda s=size, btn=size_button: self.select_size(s, btn))
-            size_button.grid(row=0, column=i, padx=10, pady=5)
-            self.size_buttons[size] = size_button
-
-        ingredient_label = tk.Label(self.root, text="Select Toppings (optional):", font=("Arial", 14, "bold"), bg='white', fg='black')
-        ingredient_label.pack(pady=20)
-        ingredients = ["Extra Cheese", "Paprika", "Chicken", "Pepperoni", "Tuna", "Onions", "Mushrooms", "Ham", "Pineapple", "Pepper"]
-        button_frame = tk.Frame(self.root, bg='white')
-        button_frame.pack(pady=10)
-
-        for i, ingredient in enumerate(ingredients):
-            row = i // 3; col = i % 3
-            ingredient_button = tk.Button(button_frame, text=ingredient, font=("Arial", 10), bg="#f0f0f0", fg="black", width=15, height=2, relief="raised", wraplength=100)
-            ingredient_button.config(command=lambda ing=ingredient, btn=ingredient_button: self.toggle_ingredient(ing, btn))
-            ingredient_button.grid(row=row, column=col, padx=8, pady=8)
 
         action_frame = tk.Frame(self.root, bg='white')
         action_frame.pack(pady=20)
 
-        add_to_basket_button = tk.Button(action_frame, text="Add to Basket", font=("Arial", 14, "bold"), bg="#FF9800", fg="white", width=15, height=2, command=lambda: self.add_to_basket('pizza'))
-        add_to_basket_button.grid(row=0, column=0, padx=10, pady=10)
-        back_button = tk.Button(action_frame, text="Back to Main Menu", font=("Arial", 12), bg="#cccccc", fg="black", width=15, height=2, command=self.create_main_screen)
-        back_button.grid(row=0, column=1, padx=10, pady=10)
+        submit_button = tk.Button(action_frame, text="Submit Order", font=("Arial", 14, "bold"), bg="#FF5722", fg="white", width=15, height=2, command=self.process_payment, 
+                                  state=tk.NORMAL if self.selected_items else tk.DISABLED)
+        submit_button.pack()
+        
+    def process_payment(self):
+        if not self.selected_items:
+            messagebox.showerror("Error", "Your order basket is empty.")
+            return
+
+        order_id = self.order_id_counter
+        self.order_id_counter += 1
+        
+        # Format items for the system (match the format generated by Customer_AI)
+        formatted_items = []
+        for item in self.selected_items:
+            item_list = [item['item_id'], item['type'].lower()]
+            if item['type'] == 'Pizza':
+                item_list.append(item['size'])
+            elif item['type'] == 'Pasta':
+                item_list.extend([item['pasta_type'], item['sauce']])
+            
+            item_list.extend(item['ingredients'])
+            formatted_items.append(item_list)
+            
+        order_data = {
+            'order_id': order_id,
+            'customer_id': self.customer_id,
+            'customer_address': self.customer_address, # Coordinates as the 'address' for routing
+            'items': formatted_items
+        }
+        
+        # Submit to the main system thread
+        self.system.submit_manual_order(order_data)
+
+        # Clear UI
+        self.selected_items = []
+        self._update_basket_display()
+        messagebox.showinfo("Order Placed", f"Order {order_id} submitted! A drone will be dispatched soon.")
