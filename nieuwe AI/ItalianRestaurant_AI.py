@@ -239,6 +239,51 @@ class ItalianRestaurant:
         self.orders_completed_count = 0
         return count
 
+    def get_active_orders_status(self):
+        """Returns a list of simplified status dicts for the OrderStatusUI."""
+        status_list = []
+        added_order_ids = set()
+        
+        # 1. Add order currently out for delivery (highest priority to show)
+        if self.delivery_in_progress_order:
+             order_id = self.delivery_in_progress_order['order_id']
+             order_data = {
+                'order_id': order_id,
+                'state': StoreState.DELIVERING.value,
+                'items_total': self.delivery_in_progress_order['total_items'],
+                'items_ready': self.delivery_in_progress_order['total_items'] 
+            }
+             status_list.append(order_data)
+             added_order_ids.add(order_id)
+        
+        # 2. Add the order currently being actively processed
+        if self.current_order and self.current_order['order_id'] not in added_order_ids:
+            order_id = self.current_order['order_id']
+            order_data = {
+                'order_id': order_id,
+                'state': self.state.value, 
+                'items_total': self.current_order['total_items'],
+                'items_ready': len(self.products_ready) if hasattr(self, 'products_ready') else 0
+            }
+            status_list.append(order_data)
+            added_order_ids.add(order_id)
+        
+        # 3. Add orders waiting in the queue (FIFO)
+        for order in self.Orders:
+            order_id = order['order_id']
+            if order_id not in added_order_ids:
+                order_data = {
+                    'order_id': order_id,
+                    'state': 'QUEUED',
+                    'items_total': order['total_items'],
+                    'items_ready': 0 
+                }
+                status_list.append(order_data)
+                added_order_ids.add(order_id)
+
+        return status_list
+
+
     def get_restaurant_stats(self):
         return {
             'orders_done': self.orders_completed_count,
