@@ -1,5 +1,5 @@
 # Order.py
-# REMOVED imports from here - they cause circular dependencies
+
 class Order:
     def __init__(self, order_data, pizza_class, pasta_class):
         self.OrderID = order_data['order_id']

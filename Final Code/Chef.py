@@ -23,7 +23,7 @@ class Chef:
         print(f"[{self.Name}] Preparing order {order_data['order_id']}. Items: {order_data['total_items']}")
         
         # Chef is now busy coordinating cooking/baking.
-        # This state is simplified here; the Chef is 'busy' until all items are launched.
+        
         
         items_to_process = self.current_task['items']
         
@@ -35,8 +35,7 @@ class Chef:
             elif item_type == 'pasta':
                 self._cook_pasta(restaurant, item)
 
-        # In this model, the chef becomes free after assigning all tasks,
-        # and relies on notifications for task completion.
+        
         self.current_task = None
         self.ChefAvailable = True # Chef is available to take the next order
 

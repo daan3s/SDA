@@ -47,7 +47,7 @@ class AutomatedRestaurantSystem:
         self.next_manual_order_id = 9000
         self.mock_customer_id = "EXT_CUST_NET"
 
-        # --- NEW: UI Thread Setup ---
+        # ---  UI Thread Setup ---
         self.tkinter_thread = TkinterThread(self)
         self.tkinter_thread.start()
         # Wait briefly for the thread to initialize the UI objects
@@ -211,7 +211,7 @@ class AutomatedRestaurantSystem:
 
         return closest_restaurant, closest_pos
 
-    # --- NEW METHOD: Gathers data for the Order Status UI ---
+    # --- Gathers data for the Order Status UI ---
     def _gather_all_active_orders(self):
         """Gathers all currently active/queued/delivering orders from all restaurants for the status UI."""
         all_active_orders = []
@@ -359,7 +359,7 @@ class AutomatedRestaurantSystem:
             clock.tick(30)
 
         pygame.quit()
-        # --- NEW: Clean up the Tkinter thread on exit ---
+        
         self.tkinter_thread.stop()
         sys.exit()
 

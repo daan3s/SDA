@@ -73,7 +73,7 @@ class OrderStatusUI:
         self.expansion_states = {}
         self.content_frame = None
         self.canvas = None
-        # NEW: Member for flicker fix (data comparison)
+        # Member for flicker fix (data comparison)
         self.last_active_orders_hash = None
 
         self.start_ui()
@@ -141,7 +141,6 @@ class OrderStatusUI:
         # 2. Check if the layout/state has changed since the last update
         if current_data_hash == self.last_active_orders_hash:
             # Only data inside the expanded frames (items_ready) would change.
-            # We rely on Pygame's update loop to schedule the next full status update.
             return
 
         self.last_active_orders_hash = current_data_hash
@@ -193,7 +192,7 @@ class OrderStatusUI:
                 padx=5,
             )
 
-            # Use lambda to assign the command safely
+            
             header_button.config(
                 command=lambda name=rest_name, btn=header_button, details=order_details_frame: self.toggle_orders_view(
                     name, btn, details)

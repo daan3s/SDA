@@ -83,7 +83,7 @@ class City:
                 HOUSE_RADIUS = 5
                 pygame.draw.circle(screen, HOUSE_COLOR, (x, y), HOUSE_RADIUS, 0)
             
-            # 2. Draw House Number (NEW)
+            # 2. Draw House Number 
             text_surface = font_small.render(str(house_num), True, (0, 0, 0)) # Black text
             # Position the text 10 pixels above the house icon's top edge
             text_rect = text_surface.get_rect(center=(x, y - half_h - 10)) 
@@ -106,7 +106,7 @@ class City:
                 pygame.draw.circle(screen, (0, 150, 0), (xi, yi), self.width_icon // 2, 0) 
                 pygame.draw.circle(screen, (255, 255, 255), (xi, yi), self.width_icon // 3, 0)
                 
-            # 2. Draw Status Text (NEW)
+            # 2. Draw Status Text 
             if i < len(restaurant_statuses):
                 status_text = restaurant_statuses[i]
                 # Render text (Black text on a small white rectangle for map visibility)
