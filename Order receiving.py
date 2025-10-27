@@ -6,7 +6,8 @@ import json
 def listen_for_orders():
     """Simple script to listen for orders from the ordering app"""
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(('', 5000))  # Listen on port 5000
+    sock.bind(('', 5003))  # Listen on port 5000
+
 
     print("🍕 KITCHEN ORDER RECEIVER 🍝")
     print("=" * 50)
