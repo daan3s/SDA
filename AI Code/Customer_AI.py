@@ -2,11 +2,14 @@ import random
 
 
 class Customer:
-    def __init__(self, customerID, customerAddress):
+    def __init__(self, customerID, customerAddress, x=0, y=0):
         self.CustomerID = customerID
         self.CustomerAddress = customerAddress
+        self.x = x  # x-coordinate for visualization
+        self.y = y # y-coordinate for visualization
         self.pizza_id_counter = 1000  # Start pizza IDs at 1000
         self.pasta_id_counter = 2000  # Start pasta IDs at 2000
+        self.orders_received_count = 0
 
     def GenerateOrder(self):
         """Generate an order with multiple pizzas and/or pastas"""
@@ -35,15 +38,16 @@ class Customer:
 
         return order_data
 
-    def ReceiveOrder(self):
-        """Receive order - returns bool"""
-        return True
+    def ReceiveOrder(self, order_data):
+        """Customer receives and confirms the order (Sequence Diagram)."""
+        self.orders_received_count += 1
+        print(f"[{self.CustomerID}] RECEIVED Order {order_data['order_id']} successfully! Items: {order_data['total_items']}. Total received: {self.orders_received_count}")
+
 
     def _generate_pizza_item(self):
         """Generate one pizza item with any combination of toppings"""
         sizes = ['small', 'medium', 'large']
-        all_toppings = ['cheese', 'pepperoni', 'mushrooms', 'onions', 'chicken', 'ham', 'pineapple', 'olives',
-                        'peppers', 'sausage', 'bacon', 'spinach']
+        all_toppings = ['pepperoni', 'mushrooms', 'onions', 'peppers', 'sausage', 'bacon', 'spinach']
 
         pizza_id = self.pizza_id_counter
         self.pizza_id_counter += 1
@@ -73,7 +77,7 @@ class Customer:
         # Choose any number of toppings (0 to all toppings)
         num_toppings = random.randint(0, len(all_toppings))
         selected_toppings = random.sample(all_toppings, num_toppings)
-
-        # Format: [pastaID, 'pasta', pasta_type, sauce, topping1, ...]
+        
+        # Format: [pastaID, 'pasta', pasta_type, sauce, topping1, topping2, ...]
         pasta_item = [pasta_id, 'pasta', pasta_type, sauce] + selected_toppings
         return pasta_item

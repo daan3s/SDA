@@ -1,272 +1,385 @@
-import pygame
-import time
-from datetime import datetime, time as dt_time
-import socket
-import json
+# ItalianRestaurant_AI.py
 
+from enum import Enum
+import time
+import random
+
+# Define the states from the State Diagram
+class StoreState(Enum):
+    CLOSED = "CLOSED"
+    OPEN = "OPEN"
+    PREPARING = "PREPARING"
+    COOKING = "COOKING"
+    BAKING = "BAKING"
+    PACKAGING = "PACKAGING"
+    DELIVERING = "DELIVERING"
 
 class ItalianRestaurant:
-    def __init__(self, name, address):
-        # Attributes from class diagram
-        self.Name = name  # str
-        self.Address = address  # str
-        self.OpeningTimes = {  # str 0...* - using dict for better management
-            "Monday": "09:00-22:00",
-            "Tuesday": "09:00-22:00",
-            "Wednesday": "09:00-22:00",
-            "Thursday": "09:00-22:00",
-            "Friday": "09:00-23:00",
-            "Saturday": "10:00-23:00",
-            "Sunday": "10:00-21:00"
-        }
-        self.OrdersDone = 0  # int
-        self.Ovens = []  # list
-        self.Pans = []  # list
-        self.DeliveryDrivers = []  # list
-        self.Chefs = []  # list
-        self.Orders = []  # list
+    def __init__(self, name, address, system_reference):
+        self.Name = name
+        self.Address = address
+        self.state: StoreState = StoreState.CLOSED
+        self.Chefs = []
+        self.Ovens = []
+        self.Pans = []
+        self.DeliveryDrivers = []
+        self.Orders = []  # Incoming order queue (like a job queue)
+        self.current_order = None # The order currently being processed/cooked/packaged
+        self.products_ready = [] # Temporary storage for completed items (Pizza/Pasta)
+        self.orders_completed_count = 0
+        self.completed_orders = []
+        self.is_open = False # For City_AI display
+        
+        # Reference to the main system for callbacks
+        self.system_reference = system_reference 
+        self.items_to_package = {} # Tracks items ready for packaging for the current order
+        self.delivery_in_progress_order = None # Order data currently out for delivery
 
-        # Additional attributes for functionality
-        self.is_open = False
-        self.start_time = time.time()
-        self.order_counter = 0
-
-        # Network settings for receiving orders
-        self.order_port = 5000
-        self.setup_order_receiver()
-
-    def setup_order_receiver(self):
-        """Setup UDP socket for receiving orders"""
-        try:
-            self.order_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.order_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.order_socket.bind(('', self.order_port))
-            self.order_socket.setblocking(False)  # Non-blocking
-            print(f"Restaurant order receiver setup on port {self.order_port}")
-        except Exception as e:
-            print(f"Error setting up order receiver: {e}")
-
-    # Operations from class diagram
-    def Check_opening_hours(self):
-        """Check if restaurant is currently open based on opening hours"""
-        current_time = self.Get_real_world_time()
-        current_day = current_time.strftime("%A")
-        current_hour = current_time.hour
-        current_minute = current_time.minute
-
-        if current_day in self.OpeningTimes:
-            opening_hours = self.OpeningTimes[current_day]
-            try:
-                open_time_str, close_time_str = opening_hours.split("-")
-                open_time = datetime.strptime(open_time_str, "%H:%M").time()
-                close_time = datetime.strptime(close_time_str, "%H:%M").time()
-
-                current_time_obj = dt_time(current_hour, current_minute)
-                self.is_open = open_time <= current_time_obj <= close_time
-                return self.is_open
-            except ValueError:
-                print(f"Error parsing opening hours for {current_day}: {opening_hours}")
-                return False
-        return False
-
-    def Show_opening_hours(self):
-        """Display all opening hours"""
-        print(f"\n=== {self.Name} Opening Hours ===")
-        for day, hours in self.OpeningTimes.items():
-            print(f"{day}: {hours}")
-        print("================================")
-        return self.OpeningTimes
-
-    def Get_real_world_time(self):
-        """Get current real world time"""
-        return datetime.now()
-
-    def Get_elapsed_time(self):
-        """Get elapsed time since restaurant started"""
-        return time.time() - self.start_time
-
-    def Show_open_status(self):
-        """Show whether restaurant is currently open or closed"""
-        is_open = self.Check_opening_hours()
-        status = "OPEN" if is_open else "CLOSED"
-        current_time = self.Get_real_world_time().strftime("%H:%M:%S")
-
-        status_info = {
-            "restaurant": self.Name,
-            "status": status,
-            "current_time": current_time,
-            "is_open": is_open
-        }
-
-        print(f"\n{self.Name} Status: {status}")
-        print(f"Current Time: {current_time}")
-        return status_info
-
-    def Receive_order(self):
-        """Receive orders from customers via UDP"""
-        if not self.is_open:
-            print("Restaurant is closed. Cannot receive orders.")
-            return None
-
-        try:
-            data, addr = self.order_socket.recvfrom(1024)
-            order_data = json.loads(data.decode('utf-8'))
-
-            print(f"Received order from {addr}")
-            print(f"Order data: {order_data}")
-
-            # Add restaurant processing info
-            order_data['restaurant_name'] = self.Name
-            order_data['received_time'] = self.Get_real_world_time().isoformat()
-            order_data['restaurant_order_id'] = self.order_counter
-            self.order_counter += 1
-
-            self.Orders.append(order_data)
-            return order_data
-
-        except BlockingIOError:
-            # No data available, which is fine
-            pass
-        except Exception as e:
-            print(f"Error receiving order: {e}")
-
-        return None
-
-    def Process_order(self, order_index=None):
-        """Process a specific order or the next order in queue"""
-        if not self.Orders:
-            print("No orders to process")
-            return None
-
-        if order_index is None:
-            # Process the oldest order
-            order_to_process = self.Orders.pop(0)
-        else:
-            if 0 <= order_index < len(self.Orders):
-                order_to_process = self.Orders.pop(order_index)
-            else:
-                print(f"Invalid order index: {order_index}")
-                return None
-
-        # Process the order
-        print(f"Processing order: {order_to_process}")
-
-        # Assign to available chef
-        chef_assigned = self.assign_order_to_chef(order_to_process)
-        if chef_assigned:
-            print(f"Order assigned to chef: {chef_assigned.Name}")
-        else:
-            print("No available chefs, order queued")
-            # Put back in queue if no chefs available
-            self.Orders.insert(0, order_to_process)
-            return None
-
-        self.OrdersDone += 1
-        return order_to_process
-
-    # Additional helper methods for restaurant operations
-    def assign_order_to_chef(self, order):
-        """Assign order to an available chef"""
-        for chef in self.Chefs:
-            if chef.ChefAvailable:
-                chef.current_order = order
-                chef.ChefAvailable = False
-                chef.ChefStatus = "Processing Order"
-                return chef
-        return None
 
     def add_chef(self, chef):
-        """Add a chef to the restaurant"""
         self.Chefs.append(chef)
-        print(f"Added chef: {chef.Name}")
 
     def add_oven(self, oven):
-        """Add an oven to the restaurant"""
         self.Ovens.append(oven)
-        print(f"Added oven: {oven.OvenID}")
 
     def add_pan(self, pan):
-        """Add a pan to the restaurant"""
         self.Pans.append(pan)
-        print(f"Added pan: {pan.panID}")
 
     def add_delivery_driver(self, driver):
-        """Add a delivery driver to the restaurant"""
         self.DeliveryDrivers.append(driver)
-        print(f"Added delivery driver: {driver.DroneID}")
 
-    def get_available_ovens(self):
-        """Get list of available ovens"""
-        return [oven for oven in self.Ovens if oven.OvenAvailable]
+    def get_current_state(self):
+        """Returns the current state for visualization."""
+        return self.state.value
 
-    def get_available_pans(self):
-        """Get list of available pans"""
-        return [pan for pan in self.Pans if pan.panavailable]
+    def open_for_business(self):
+        self.state = StoreState.OPEN
+        self.is_open = True
+        print(f"[{self.Name}] is now {self.state.value}.")
 
-    def get_available_chefs(self):
-        """Get list of available chefs"""
-        return [chef for chef in self.Chefs if chef.ChefAvailable]
+    def receive_order(self, order_data):
+        """Receives a new order from a Customer/System (Sequence Diagram)."""
+        self.Orders.append(order_data)
+        print(f"[{self.Name}] Received new order {order_data['order_id']} from {order_data['customer_id']}. Queue size: {len(self.Orders)}")
+        
+        # Transition: OPEN -> PREPARING (if an order is received and queue was empty)
+        if self.state == StoreState.OPEN and len(self.Orders) == 1:
+             self.state = StoreState.PREPARING
+             print(f"[{self.Name}] Transition: OPEN -> PREPARING.")
 
-    def get_available_drivers(self):
-        """Get list of available delivery drivers"""
-        return [driver for driver in self.DeliveryDrivers if driver.DroneAvailable]
+    # --- Core Order Processing Logic ---
+    
+    def _start_preparation(self):
+        """Transition: PREPARING -> COOKING/BAKING. Chef starts working."""
+        if not self.Orders:
+            self.state = StoreState.OPEN
+            print(f"[{self.Name}] Transition: PREPARING -> OPEN (Queue empty).")
+            return
 
-    def get_restaurant_stats(self):
-        """Get comprehensive restaurant statistics"""
-        return {
-            "name": self.Name,
-            "address": self.Address,
-            "is_open": self.is_open,
-            "orders_done": self.OrdersDone,
-            "orders_queued": len(self.Orders),
-            "total_chefs": len(self.Chefs),
-            "available_chefs": len(self.get_available_chefs()),
-            "total_ovens": len(self.Ovens),
-            "available_ovens": len(self.get_available_ovens()),
-            "total_pans": len(self.Pans),
-            "available_pans": len(self.get_available_pans()),
-            "total_drivers": len(self.DeliveryDrivers),
-            "available_drivers": len(self.get_available_drivers()),
-            "elapsed_time": self.Get_elapsed_time()
-        }
+        # Take the next order from the queue
+        self.current_order = self.Orders.pop(0)
+        order_id = self.current_order['order_id']
+        
+        # Initialize items_to_package tracker for this order
+        self.items_to_package[order_id] = {}
+        for item in self.current_order['items']:
+            item_id = item[0]
+            item_type = item[1]
+            # Store the item data initially, mark it as not ready
+            self.items_to_package[order_id][item_id] = {'data': item, 'ready': False, 'type': item_type}
+
+        # Find an available chef
+        available_chef = next((c for c in self.Chefs if c.ChefAvailable), None)
+
+        if available_chef:
+            # Chef handles dispatching all items to Oven/Pan
+            available_chef.prepare_order(self, self.current_order)
+            self.state = StoreState.COOKING # Change state to indicate active cooking/baking
+            print(f"[{self.Name}] Transition: PREPARING -> COOKING/BAKING. Chef {available_chef.Name} started order {order_id}.")
+        else:
+            # Re-queue the order if no chef is available (simplified)
+            self.Orders.insert(0, self.current_order)
+            self.current_order = None
+            print(f"[{self.Name}] Warning: No available chef. Order {order_id} re-queued.")
+
+    def notify_cooking_status(self, item_id, status: str, item_type: str):
+        """
+        Receives cooking/baking completion status from Chef/Equipment.
+        Transition: COOKING/BAKING -> PACKAGING (when all items are ready).
+        """
+        order_id = self.current_order['order_id']
+        
+        if order_id not in self.items_to_package:
+            print(f"[{self.Name}] Error: Received status for item {item_id} but order {order_id} is not tracked.")
+            return
+            
+        if status == 'done':
+            # Mark the item as ready
+            if item_id in self.items_to_package[order_id]:
+                self.items_to_package[order_id][item_id]['ready'] = True
+                print(f"[{self.Name}] Item {item_id} ({item_type}) ready for order {order_id}.")
+            else:
+                print(f"[{self.Name}] Error: Unknown item ID {item_id} for order {order_id}.")
+
+        # Check if ALL items in the current order are ready
+        all_items_ready = all(item['ready'] for item in self.items_to_package[order_id].values())
+
+        if all_items_ready:
+            print(f"[{self.Name}] All items for order {order_id} are ready. Starting packaging.")
+            self.state = StoreState.PACKAGING
+            
+    def _start_packaging(self):
+        """Simulate packaging time."""
+        if self.state != StoreState.PACKAGING:
+            return
+
+        # Simple packaging simulation: Instantaneous (or could use a timer)
+        time.sleep(0.01) # Small delay for simulation effect
+
+        print(f"[{self.Name}] Order {self.current_order['order_id']} is packaged. Starting delivery.")
+        self.state = StoreState.DELIVERING
+        self._start_delivery()
+
+
+    def _start_delivery(self):
+        """Transition: PACKAGING -> DELIVERING. Drone starts delivery."""
+        if self.state != StoreState.DELIVERING or not self.current_order:
+            return
+
+        available_drone = next((d for d in self.DeliveryDrivers if d.Available), None)
+
+        if available_drone:
+            # Find the customer object to get coordinates using the system reference
+            customer = self.system_reference.active_customer_orders.get(self.current_order['order_id'])
+            if customer:
+                customer_x, customer_y = customer.x, customer.y
+            else:
+                # Fallback: Should not happen if tracking is correct, but safe fallback is necessary
+                print(f"[{self.Name}] Warning: Could not find customer coords in system tracking. Using random house.")
+                house_index = random.randint(0, len(self.system_reference.city.houseCoords) - 1)
+                customer_x, customer_y = self.system_reference.city.houseCoords[house_index]
+
+            # Drone starts delivery
+            delivery_successful = available_drone.deliver_order(
+                self, 
+                self.current_order, 
+                customer_x, 
+                customer_y
+            )
+
+            if delivery_successful:
+                self.delivery_in_progress_order = self.current_order
+                self.current_order = None # Order is now with the drone
+                # Clear item tracking for the packaged order
+                del self.items_to_package[self.delivery_in_progress_order['order_id']]
+                print(f"[{self.Name}] Delivery started for order {self.delivery_in_progress_order['order_id']}.")
+            else:
+                # Should not happen if state is handled correctly
+                print(f"[{self.Name}] Error: No available drone despite state DELIVERING.")
+                
+        else:
+            # Should enter PACKAGING state and wait for drone
+            print(f"[{self.Name}] Waiting for available drone.")
+            self.state = StoreState.PACKAGING # Go back to packaging state to wait for drone
+
+    def complete_order(self, completed_order):
+        """Called by DeliveryDrone when delivery is finished (Sequence Diagram)."""
+        if not self.delivery_in_progress_order or completed_order['order_id'] != self.delivery_in_progress_order['order_id']:
+            print(f"[{self.Name}] Warning: complete_order called but order {completed_order['order_id']} was not marked as delivering.")
+            return
+
+        self.delivery_in_progress_order = None
+        self.orders_completed_count += 1
+
+        # Notify the AutomatedRestaurantSystem that the order is done.
+        self.system_reference.handle_completed_order(completed_order)
+        
+        # State transitions
+        if self.Orders:
+            self.state = StoreState.PREPARING
+            print(f"[{self.Name}] Transition: DELIVERING -> PREPARING (More orders waiting).")
+        elif self.current_order:
+            # If the next order's preparation was very fast, it might be waiting for packaging
+            next_order_id = self.current_order['order_id']
+            if next_order_id in self.items_to_package and all(item['ready'] for item in self.items_to_package.get(next_order_id, {}).values()):
+                self.state = StoreState.PACKAGING
+            else:
+                self.state = StoreState.COOKING 
+            print(f"[{self.Name}] Transition: DELIVERING -> {self.state.value} (Next order in progress).")
+        else:
+            self.state = StoreState.OPEN
+            print(f"[{self.Name}] Transition: DELIVERING -> OPEN (Queue empty).")
+
+    # --- Update Loop ---
 
     def update(self):
-        """Update restaurant state - call this regularly"""
-        # Check opening hours
-        self.Check_opening_hours()
+        """Performs state-based actions and updates all equipment."""
+        
+        # 1. Update Equipment
+        for oven in self.Ovens:
+            oven.update(self)
+        for pan in self.Pans:
+            pan.update(self)
+        for drone in self.DeliveryDrivers:
+            drone.update(self)
+            
+        # 2. Perform State Actions
+        if self.state == StoreState.PREPARING:
+            self._start_preparation()
+        elif self.state == StoreState.PACKAGING:
+            self._start_packaging()
+        elif self.state == StoreState.OPEN and self.Orders:
+            # If a new order arrived while OPEN, transition to PREPARING
+            self.state = StoreState.PREPARING
+            print(f"[{self.Name}] Transition: OPEN -> PREPARING (New order detected in queue).")
 
-        # Receive new orders
-        if self.is_open:
-            self.Receive_order()
+    # --- Utility Methods ---
+    def check_and_clear_completed_orders(self):
+        """Used by main_automated to update global stats."""
+        count = self.orders_completed_count
+        self.orders_completed_count = 0
+        return count
 
-        # Process orders if we have available chefs
-        if self.Orders and self.get_available_chefs():
-            self.Process_order()
+    def get_active_orders_status(self):
+        """Returns a list of status dictionaries for active orders in this restaurant."""
+        status_list = []
+        added_order_ids = set()
+        
+        # 1. Add current order details
+        if self.current_order and self.current_order['order_id'] not in added_order_ids:
+            order_id = self.current_order['order_id']
+            order_data = {
+                'restaurant_name': self.Name, # NEW: Include restaurant name
+                'order_id': order_id,
+                'state': self.state.value, 
+                'items_total': self.current_order['total_items'],
+                'items_ready': len(self.products_ready) if hasattr(self, 'products_ready') else 0
+            }
+            status_list.append(order_data)
+            added_order_ids.add(order_id)
+        
+        # 2. Add orders waiting in the queue (FIFO)
+        for order in self.Orders:
+            order_id = order['order_id']
+            if order_id not in added_order_ids:
+                order_data = {
+                    'restaurant_name': self.Name, # NEW: Include restaurant name
+                    'order_id': order_id,
+                    'state': 'QUEUED',
+                    'items_total': order['total_items'],
+                    'items_ready': 0 
+                }
+                status_list.append(order_data)
+                added_order_ids.add(order_id)
 
-    def close_restaurant(self):
-        """Close the restaurant and cleanup"""
-        print(f"Closing {self.Name}")
-        try:
-            self.order_socket.close()
-        except:
-            pass
-        self.is_open = False
+        return status_list
 
 
-# Example usage
-if __name__ == "__main__":
-    # Create restaurant
-    restaurant = ItalianRestaurant("Mario's Italian Kitchen", "123 Pizza Street, Italy")
+    def get_restaurant_stats(self):
+        return {
+            'orders_done': self.orders_completed_count,
+            'available_chefs': sum(1 for c in self.Chefs if c.ChefAvailable),
+            'total_chefs': len(self.Chefs),
+            'available_ovens': sum(1 for o in self.Ovens if o.Available),
+            'total_ovens': len(self.Ovens),
+            'available_pans': sum(1 for p in self.Pans if p.Available),
+            'total_pans': len(self.Pans),
+            'state': self.state.value,
+            'queue_size': len(self.Orders)
+        }
+    
+    def get_drone_states(self):
+        """Returns a list of status strings for all delivery drones."""
+        # Assuming self.DeliveryDrivers holds the drone objects
+        drone_states = []
+        for drone in self.DeliveryDrivers:
+            # Format: "Drone X: IDLE" or "Drone Y: TRAVELING (Order Z)"
+            status_text = f"Drone {drone.DroneID}: {drone.Status}"
+            drone_states.append(status_text)
+        return drone_states
+    
+    def complete_order(self, order_data):
+        """Called by DeliveryDrone when an order has been successfully delivered."""
+        order_id = order_data['order_id']
+        
+        # 1. Update Restaurant State & Counters
+        self.orders_completed_count += 1
+        self.delivery_in_progress_order = None
+        
+        # 2. Store as completed order (History)
+        order_data['final_status'] = 'DELIVERED'
+        order_data['completion_time'] = time.time() # Add timestamp
+        self.completed_orders.append(order_data)
+        
+        # 3. Notify system (removes from active list)
+        self.system_reference.handle_completed_order(order_data)
+        
+        # 4. Transition back to PREPARING or OPEN
+        if self.Orders:
+            self.state = StoreState.PREPARING
+        else:
+            self.state = StoreState.OPEN
+        print(f"[{self.Name}] Order {order_id} DELIVERED. Transition: DELIVERING -> {self.state.value}")
 
-    # Show opening hours
-    restaurant.Show_opening_hours()
+    # --- NEW METHOD: Get all orders (for detailed view) ---
+    def get_all_order_data(self):
+        """
+        Gathers all orders (queued, active, delivering, and completed)
+        and returns a unified list for display in the UI.
+        """
+        all_orders = []
+        
+        # 1. Queued Orders (in self.Orders)
+        for order in self.Orders:
+            all_orders.append({
+                'type': 'ACTIVE',
+                'order_id': order['order_id'],
+                'customer_id': order['customer_id'],
+                'state': 'QUEUED',
+                'items_total': len(order['items']),
+                'items_ready': 0,
+                'is_current': False
+            })
+            
+        # 2. Currently Processing Order (in self.current_order)
+        if self.current_order:
+            order_id = self.current_order['order_id']
+            # Calculate items ready (from items_to_package)
+            ready_count = sum(1 for item in self.items_to_package.get(order_id, {}).values() if item['ready'])
+            
+            all_orders.append({
+                'type': 'ACTIVE',
+                'order_id': order_id,
+                'customer_id': self.current_order['customer_id'],
+                'state': self.state.value, # PREPARING, COOKING, BAKING, PACKAGING
+                'items_total': len(self.current_order['items']),
+                'items_ready': ready_count,
+                'is_current': True,
+            })
 
-    # Check current status
-    status = restaurant.Show_open_status()
-    print(f"Restaurant is {'OPEN' if status['is_open'] else 'CLOSED'}")
+        # 3. Order out for delivery (in self.delivery_in_progress_order)
+        if self.delivery_in_progress_order:
+             all_orders.append({
+                'type': 'ACTIVE',
+                'order_id': self.delivery_in_progress_order['order_id'],
+                'customer_id': self.delivery_in_progress_order['customer_id'],
+                'state': 'DELIVERING',
+                'items_total': len(self.delivery_in_progress_order['items']),
+                'items_ready': len(self.delivery_in_progress_order['items']), 
+                'is_current': False
+            })
 
-    # Display statistics
-    stats = restaurant.get_restaurant_stats()
-    print(f"\nRestaurant Statistics:")
-    for key, value in stats.items():
-        print(f"  {key}: {value}")
+        # 4. Completed Orders (in self.completed_orders)
+        for order in self.completed_orders:
+            all_orders.append({
+                'type': 'COMPLETED',
+                'order_id': order['order_id'],
+                'customer_id': order['customer_id'],
+                'state': order.get('final_status', 'DELIVERED'),
+                'items_total': len(order['items']),
+                'items_ready': len(order['items']),
+                'is_current': False,
+                'completion_time': order.get('completion_time', 'N/A')
+            })
+            
+        return all_orders
