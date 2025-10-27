@@ -21,8 +21,8 @@ pizza_id_counter = 1000
 pasta_id_counter = 2000
 
 # Network settings - Default to broadcast, but can be changed to specific IP
-TARGET_PORT = 5005
-TARGET_IP = "145.93.81.138"  # Default: broadcast to all
+TARGET_PORT = 5004
+TARGET_IP = "145.93.93.128"  # Default: broadcast to all
 
 
 # TARGET_IP = "192.168.1.100"  # Uncomment and change to specific IP
